@@ -267,6 +267,7 @@ export default function App() {
   const [empSearch, setEmpSearch] = useState('');
   const [empPage, setEmpPage] = useState(1);
   const EMP_PER_PAGE = 50;
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
 
   const [tenantForm, setTenantForm] = useState<any>({
     employee_id: '', name: '', name_kana: '', company: '', property_id: '',
@@ -415,6 +416,26 @@ export default function App() {
       const updated = { ...prev, tenants: prev.tenants.map(t => t.id === tid ? { ...t, status: 'active' as const, exit_date: undefined, cleaning_fee: undefined } : t) };
       return autoSplitRent(updated, tenant.property_id);
     });
+  };
+
+  const handleSaveEmployee = () => {
+    if (!editingEmployee) return;
+    if (!editingEmployee.id.trim() || !editingEmployee.name.trim()) { alert('ID y nombre son obligatorios.'); return; }
+    setDb(prev => {
+      const idx = prev.employees.findIndex(e => e.id === editingEmployee.id);
+      if (idx >= 0) { const emps = [...prev.employees]; emps[idx] = editingEmployee; return { ...prev, employees: emps }; }
+      return prev;
+    });
+    setEditingEmployee(null);
+  };
+
+  const handleDeleteEmployee = (empId: string) => {
+    const emp = db.employees.find(e => e.id === empId);
+    if (!emp) return;
+    const isAssigned = db.tenants.some(t => t.employee_id === empId && t.status === 'active');
+    if (isAssigned) { alert(`No se puede eliminar: ${emp.name} está asignado a una propiedad activa.`); return; }
+    if (!window.confirm(`¿Eliminar empleado "${emp.name}" (${empId})?`)) return;
+    setDb(prev => ({ ...prev, employees: prev.employees.filter(e => e.id !== empId) }));
   };
 
   const handleUpdateRentDetails = (tid: number, field: string, val: string) => {
@@ -697,6 +718,7 @@ export default function App() {
                           <th className="text-left p-4 text-[10px] text-gray-500 uppercase font-bold hidden md:table-cell">カナ</th>
                           <th className="text-left p-4 text-[10px] text-gray-500 uppercase font-bold hidden md:table-cell">派遣先</th>
                           <th className="text-left p-4 text-[10px] text-gray-500 uppercase font-bold">Estado</th>
+                          <th className="text-right p-4 text-[10px] text-gray-500 uppercase font-bold">Acciones</th>
                         </tr></thead>
                         <tbody>
                           {filteredEmployees.slice((empPage - 1) * EMP_PER_PAGE, empPage * EMP_PER_PAGE).map(emp => {
@@ -709,6 +731,12 @@ export default function App() {
                                 <td className="p-4 text-gray-400 hidden md:table-cell">{emp.name_kana}</td>
                                 <td className="p-4 text-gray-400 hidden md:table-cell">{emp.company}</td>
                                 <td className="p-4">{isAssigned ? <span className="text-[10px] bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-1 rounded font-bold flex items-center gap-1 w-fit"><Building className="w-3 h-3"/>{assignedProp?.name}</span> : <span className="text-[10px] text-gray-500">Disponible</span>}</td>
+                                <td className="p-4 text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <button onClick={() => setEditingEmployee({ ...emp })} className="text-gray-600 hover:text-blue-400 p-1.5 rounded transition" title="Editar"><Edit2 className="w-3.5 h-3.5"/></button>
+                                    <button onClick={() => handleDeleteEmployee(emp.id)} className="text-gray-600 hover:text-red-400 p-1.5 rounded transition" title="Eliminar"><Trash2 className="w-3.5 h-3.5"/></button>
+                                  </div>
+                                </td>
                               </tr>
                             );
                           })}
@@ -979,6 +1007,24 @@ export default function App() {
             <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg hover:shadow-blue-500/20 transition hover:-translate-y-1">Confirmar</button>
           </div>
         </form>
+      </Modal>
+
+      {/* ====== MODAL: EDIT EMPLOYEE ====== */}
+      <Modal isOpen={!!editingEmployee} onClose={() => setEditingEmployee(null)} title="Editar Empleado">
+        {editingEmployee && (
+          <div className="space-y-4">
+            <div><label className="text-xs text-gray-400 font-bold block mb-1">社員No (ID)</label><input className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-blue-400 font-mono" value={editingEmployee.id} disabled /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="text-xs text-gray-400 block mb-1">氏名 (Nombre)</label><input className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white focus:border-blue-500 outline-none" value={editingEmployee.name} onChange={e => setEditingEmployee({ ...editingEmployee, name: e.target.value })} /></div>
+              <div><label className="text-xs text-gray-400 block mb-1">カナ</label><input className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white focus:border-blue-500 outline-none" value={editingEmployee.name_kana} onChange={e => setEditingEmployee({ ...editingEmployee, name_kana: e.target.value })} /></div>
+            </div>
+            <div><label className="text-xs text-gray-400 block mb-1">派遣先 (Empresa)</label><input className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white focus:border-blue-500 outline-none" value={editingEmployee.company} onChange={e => setEditingEmployee({ ...editingEmployee, company: e.target.value })} /></div>
+            <div className="flex gap-4 pt-4">
+              <button onClick={() => setEditingEmployee(null)} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-3 rounded-xl hover:bg-white/5 transition">Cancelar</button>
+              <button onClick={handleSaveEmployee} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/20 transition">Guardar</button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
