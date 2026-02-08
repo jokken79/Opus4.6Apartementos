@@ -76,19 +76,6 @@ export interface Database {
   last_sync: string;
 }
 
-// ============ DATOS DASHBOARD ============
-export interface DashboardMetrics {
-  totalProperties: number;
-  occupiedCount: number;
-  totalCapacity: number;
-  occupancyRate: number;
-  profit: number;
-  totalCollected: number;
-  totalPropCost: number;
-  totalTargetUNS: number;
-  alerts: AlertItem[];
-}
-
 export interface AlertItem {
   type: 'warning' | 'danger';
   msg: string;
@@ -110,32 +97,6 @@ export interface Notification {
   timestamp: string;
 }
 
-// ============ IMPORTACIÓN EXCEL ============
-export interface ImportStatus {
-  type: '' | 'loading' | 'success' | 'error';
-  msg: string;
-}
-
-export interface ExcelImportData {
-  type: 'employees' | 'rent_management' | '';
-  data: any;
-  summary: string;
-}
-
-// ============ VALIDACIÓN ============
-export interface ValidationError {
-  field: string;
-  message: string;
-  severity: 'error' | 'warning';
-}
-
-// ============ CICLO FACTURACIÓN ============
-export interface BillingCycle {
-  start: string; // Fecha formateada
-  end: string;
-  month: string;
-  closingDay: number;
-}
 
 // ============ REPORTES MENSUALES ============
 
@@ -202,25 +163,3 @@ export interface ReportHistory {
   version: string;
 }
 
-// ============ HISTORIAL (Future) ============
-export interface AuditLog {
-  id: string;
-  action: string;
-  entity_type: 'property' | 'tenant' | 'employee';
-  entity_id: number;
-  changes: Record<string, any>;
-  user_id: string;
-  timestamp: string;
-}
-
-// ============ RESPUESTA API (Future) ============
-export interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: {
-    code: string;
-    message: string;
-    details?: Record<string, any>;
-  };
-  timestamp: string;
-}
