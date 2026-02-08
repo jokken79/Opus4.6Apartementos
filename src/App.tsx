@@ -262,7 +262,7 @@ export default function App() {
   const [empSearch, setEmpSearch] = useState('');
 
   const [tenantForm, setTenantForm] = useState<any>({
-    employee_id: '', name: '', name_kana: '', property_id: '',
+    employee_id: '', name: '', name_kana: '', company: '', property_id: '',
     rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0]
   });
   const [propertyForm, setPropertyForm] = useState<any>({
@@ -381,7 +381,9 @@ export default function App() {
 
   const handleAddTenant = (e: React.FormEvent) => {
     e.preventDefault();
-    if (db.tenants.find(t => t.employee_id === tenantForm.employee_id && t.status === 'active')) { alert('ID ya asignado.'); return; }
+    if (!tenantForm.employee_id.trim() || !tenantForm.name.trim()) { alert('社員No y Nombre son obligatorios.'); return; }
+    if (!tenantForm.property_id) { alert('Error: propiedad no seleccionada.'); return; }
+    if (db.tenants.find(t => t.employee_id === tenantForm.employee_id && t.status === 'active')) { alert('Este 社員No ya está asignado a otro apartamento.'); return; }
     const newT: Tenant = { id: Date.now(), ...tenantForm, property_id: parseInt(tenantForm.property_id), rent_contribution: parseInt(tenantForm.rent_contribution) || 0, parking_fee: parseInt(tenantForm.parking_fee) || 0, status: 'active' };
     setDb(prev => ({ ...prev, tenants: [...prev.tenants, newT] }));
     setIsAddTenantModalOpen(false);
@@ -448,9 +450,10 @@ export default function App() {
           <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/10 p-1"><img src={COMPANY_INFO.logo_url} className="h-full object-contain" alt="Logo" onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/40x40?text=UNS"; }} /></div>
           <div><h1 className="text-lg font-black text-white tracking-tight leading-none">{COMPANY_INFO.name_en}</h1><span className="text-[10px] text-blue-400 uppercase tracking-widest font-bold">Estate OS v7</span></div>
         </div>
-        <div className="hidden md:flex items-center bg-[#15171c] border border-white/10 rounded-full px-4 py-2 w-96 focus-within:border-blue-500/50 transition-all group">
-          <Search className="w-4 h-4 text-gray-500 group-focus-within:text-blue-500 transition-colors" />
-          <input type="text" placeholder="Buscar propiedad, inquilino..." className="bg-transparent border-none outline-none text-sm text-white w-full ml-3 placeholder-gray-600" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); if (e.target.value) setActiveTab('properties'); }} />
+        <div className="flex items-center bg-[#15171c] border border-white/10 rounded-full px-3 py-2 flex-1 mx-3 md:mx-0 md:flex-none md:w-96 focus-within:border-blue-500/50 transition-all group">
+          <Search className="w-4 h-4 text-gray-500 group-focus-within:text-blue-500 transition-colors shrink-0" />
+          <input type="text" placeholder="Buscar..." className="bg-transparent border-none outline-none text-sm text-white w-full ml-2 placeholder-gray-600" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); if (e.target.value) setActiveTab('properties'); }} />
+          {searchTerm && <button onClick={() => setSearchTerm('')} className="text-gray-500 hover:text-white shrink-0"><X className="w-3.5 h-3.5"/></button>}
         </div>
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-[#15171c] border border-white/10 flex items-center justify-center hover:bg-[#20242c] cursor-pointer transition relative"><Bell className="w-4 h-4 text-gray-400" />{dashboardData.alerts.length > 0 && <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}</div>
@@ -536,7 +539,7 @@ export default function App() {
                         <div className="flex justify-between items-start mb-3">
                           <h3 className="font-black text-xl text-white truncate pr-2 flex flex-col leading-none">{p.name}{p.room_number && <span className="text-blue-400 font-mono text-base mt-1">#{p.room_number}</span>}</h3>
                           <div className="flex flex-col items-end gap-1">
-                            <span className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-black border ${vac <= 0 ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-green-500/10 text-green-400 border-green-500/20'}`}>{vac <= 0 ? 'LLENO' : `${vac} LIBRES`}</span>
+                            <span className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-black border ${vac < 0 ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' : vac === 0 ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-green-500/10 text-green-400 border-green-500/20'}`}>{vac < 0 ? 'EXCESO' : vac === 0 ? 'LLENO' : `${vac} LIBRES`}</span>
                             <span className={`shrink-0 px-2 py-0.5 rounded text-[9px] font-bold border ${p.billing_mode === 'split' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'}`}>{p.billing_mode === 'split' ? '均等割り' : '個別設定'}</span>
                           </div>
                         </div>
@@ -559,6 +562,13 @@ export default function App() {
                     </GlassCard>
                   );
                 })}
+                {(propertyViewMode === 'active' ? filteredProperties.filter(p => !p.contract_end || new Date(p.contract_end) > new Date()) : filteredProperties.filter(p => p.contract_end && new Date(p.contract_end) <= new Date())).length === 0 && (
+                  <div className="col-span-full flex flex-col items-center justify-center py-16 text-center">
+                    <Building className="w-12 h-12 text-gray-700 mb-4" />
+                    <p className="text-gray-500 text-sm font-bold">{companyFilter ? `Sin propiedades para 派遣先: ${companyFilter}` : searchTerm ? 'Sin resultados para la búsqueda' : propertyViewMode === 'history' ? 'Sin propiedades en historial' : 'Sin propiedades registradas'}</p>
+                    {companyFilter && <button onClick={() => setCompanyFilter('')} className="mt-3 text-blue-400 text-xs hover:underline">Limpiar filtro</button>}
+                  </div>
+                )}
               </div>
             </div>
           )}
