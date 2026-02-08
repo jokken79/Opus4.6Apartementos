@@ -32,7 +32,7 @@ interface Property {
 interface Tenant {
   id: number; employee_id: string; name: string; name_kana: string;
   property_id: number; rent_contribution: number; parking_fee: number;
-  entry_date?: string; status: 'active' | 'inactive';
+  entry_date?: string; exit_date?: string; status: 'active' | 'inactive';
 }
 interface Employee { id: string; name: string; name_kana: string; company: string; full_data: any; }
 interface AppConfig { companyName: string; closingDay: number; }
@@ -367,7 +367,8 @@ export default function App() {
 
   const removeTenant = (tid: number) => {
     if (!window.confirm('¿Dar de baja a este inquilino?')) return;
-    setDb(prev => ({ ...prev, tenants: prev.tenants.map(t => t.id === tid ? { ...t, status: 'inactive' as const } : t) }));
+    const exitDate = new Date().toISOString().split('T')[0];
+    setDb(prev => ({ ...prev, tenants: prev.tenants.map(t => t.id === tid ? { ...t, status: 'inactive' as const, exit_date: exitDate } : t) }));
   };
 
   // --- IMPORT ---
@@ -514,6 +515,7 @@ export default function App() {
                           <div className="flex justify-between pt-1"><span className="text-gray-400 font-bold uppercase">Recaudado</span><span className={`text-lg font-black font-mono ${totalIn >= (p.rent_price_uns || 0) ? 'text-green-400' : 'text-orange-400'}`}>¥{totalIn.toLocaleString()}</span></div>
                         </div>
                         {ts.length > 0 && <div className="mb-3 space-y-1">{ts.map(t => (<div key={t.id} className="flex items-center gap-2 text-[10px] text-gray-400"><User className="w-3 h-3 text-blue-500"/><span className="truncate">{t.name}</span><span className="text-gray-600 font-mono ml-auto">¥{t.rent_contribution.toLocaleString()}</span></div>))}</div>}
+                        {(() => { const past = db.tenants.filter(t => t.property_id === p.id && t.status === 'inactive'); return past.length > 0 ? <div className="mb-3 flex items-center gap-1.5 text-[10px] text-orange-400/60"><History className="w-3 h-3"/><span>{past.length} inquilino{past.length > 1 ? 's' : ''} anterior{past.length > 1 ? 'es' : ''}</span></div> : null; })()}
                         <div className="space-y-1 opacity-60 hover:opacity-100 transition-opacity mb-3"><p className="text-gray-400 text-[10px] flex gap-1 truncate items-center"><MapPin className="w-3 h-3 text-gray-600"/> {p.address}</p></div>
                       </div>
                       <div className="flex gap-2 mt-auto">
@@ -634,7 +636,7 @@ export default function App() {
                 <button onClick={() => { setTenantForm({ employee_id: '', name: '', name_kana: '', property_id: prop.id, rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0] }); setIsAddTenantModalOpen(true); }} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition"><UserPlus className="w-4 h-4"/> Registrar Inquilino</button>
               </div>
 
-              {/* TENANT TABLE */}
+              {/* TENANT TABLE - ACTIVE */}
               <div className="bg-gray-900/50 rounded-2xl border border-white/5 overflow-hidden">
                 <div className="grid grid-cols-12 text-[10px] text-gray-500 uppercase font-bold p-4 bg-black/20 border-b border-white/5">
                   <div className="col-span-4">Inquilino</div>
@@ -665,6 +667,42 @@ export default function App() {
                   })}
                 </div>
               </div>
+
+              {/* TENANT HISTORY - INACTIVE */}
+              {(() => {
+                const inactiveTenants = db.tenants.filter(t => t.property_id === prop.id && t.status === 'inactive');
+                if (inactiveTenants.length === 0) return null;
+                return (
+                  <div className="bg-gray-900/30 rounded-2xl border border-orange-500/10 overflow-hidden">
+                    <div className="flex items-center gap-2 p-4 bg-orange-900/10 border-b border-orange-500/10">
+                      <History className="w-4 h-4 text-orange-400" />
+                      <span className="text-xs text-orange-400 font-bold uppercase tracking-wider">Historial de Inquilinos ({inactiveTenants.length})</span>
+                    </div>
+                    <div className="p-2 space-y-1">
+                      {inactiveTenants.map(t => (
+                        <div key={t.id} className="grid grid-cols-12 items-center p-3 rounded-xl bg-black/20 border border-white/5 opacity-70">
+                          <div className="col-span-4">
+                            <div className="text-gray-400 text-sm font-bold truncate">{t.name}</div>
+                            <div className="text-[10px] text-gray-600 font-mono">{t.employee_id}</div>
+                          </div>
+                          <div className="col-span-3 text-center">
+                            <div className="text-[10px] text-gray-500 font-mono">{t.entry_date || '—'}</div>
+                            <div className="text-[9px] text-gray-600">入居</div>
+                          </div>
+                          <div className="col-span-3 text-center">
+                            <div className="text-[10px] text-orange-400/70 font-mono">{t.exit_date || '—'}</div>
+                            <div className="text-[9px] text-gray-600">退去</div>
+                          </div>
+                          <div className="col-span-2 text-right">
+                            <div className="text-[10px] text-gray-500 font-mono">¥{(t.rent_contribution || 0).toLocaleString()}</div>
+                            <div className="text-[9px] text-gray-600">最終家賃</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}
