@@ -1,43 +1,41 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Building, Users, LayoutDashboard, Search, Database, UploadCloud, PlusCircle, X,
-  FileCheck, AlertCircle, Calculator, DollarSign, UserPlus, Save, Calendar, Check,
-  Trash2, Phone, User, History, MapPin, Edit2, Map, Hash, Loader2, Bell,
-  TrendingUp, ArrowRight, Download, Upload, Settings, Clock, Mail, Award,
-  CalendarDays, Percent, LogOut, Table2
+  AlertCircle, Calculator, DollarSign, UserPlus, Calendar, Check,
+  Trash2, User, History, MapPin, Edit2, Map, Hash, Loader2, Bell,
+  TrendingUp, Settings, CalendarDays, Percent, LogOut, Table2, FileText
 } from 'lucide-react';
+import { ReportsView } from './components/reports/ReportsView';
+import { GlassCard, StatCard, Modal, NavButton, NavButtonMobile } from './components/ui';
+import { SettingsView } from './components/settings/SettingsView';
+import { ImportView } from './components/import/ImportView';
+import { useIndexedDB } from './hooks/useIndexedDB';
+import type { Property, Tenant, Employee, AppDatabase, AlertItem } from './types/database';
+import { validateBackup, validateProperty, validateTenant } from './utils/validators';
+import { isPropertyActive } from './utils/propertyHelpers';
+import { COMPANY_INFO } from './utils/constants';
+
+// --- ID Generator (monotónico, sin colisiones) ---
+let _lastId = 0;
+const generateId = (): number => {
+  const now = Date.now();
+  _lastId = now > _lastId ? now : _lastId + 1;
+  return _lastId;
+};
 
 // --- SheetJS ---
 const useLoadSheetJS = () => {
   useEffect(() => {
-    if (!(window as any).XLSX) {
-      const script = document.createElement('script');
-      script.src = "https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js";
-      script.async = true;
-      document.body.appendChild(script);
-    }
+    if ((window as any).XLSX) return;
+    const script = document.createElement('script');
+    script.src = "https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js";
+    script.integrity = "sha384-OLBgp1GsljhM2TJ+sbHjaiH9txEUvgdDTAzHv2P24donTt6/529l+9Ua0vFImLlb";
+    script.crossOrigin = "anonymous";
+    script.async = true;
+    script.onerror = () => { console.error('[SheetJS] Error cargando CDN'); };
+    document.body.appendChild(script);
   }, []);
 };
-
-// --- TIPOS ---
-interface Property {
-  id: number; name: string; room_number?: string; postal_code?: string;
-  address: string; address_auto?: string; address_detail?: string;
-  manager_name?: string; manager_phone?: string;
-  contract_start?: string; contract_end?: string; type?: string;
-  capacity: number; rent_cost: number; rent_price_uns: number;
-  parking_cost: number; kanri_hi?: number;
-  billing_mode?: 'split' | 'fixed';
-}
-interface Tenant {
-  id: number; employee_id: string; name: string; name_kana: string;
-  company?: string; property_id: number; rent_contribution: number; parking_fee: number;
-  entry_date?: string; exit_date?: string; cleaning_fee?: number; status: 'active' | 'inactive';
-}
-interface Employee { id: string; name: string; name_kana: string; company: string; full_data: Record<string, unknown>; }
-interface AppConfig { companyName: string; closingDay: number; defaultCleaningFee: number; }
-interface AppDatabase { properties: Property[]; tenants: Tenant[]; employees: Employee[]; config: AppConfig; }
-interface AlertItem { type: 'warning' | 'danger'; msg: string; }
 
 // --- 日割り計算 (Pro-rata) ---
 const calculateProRata = (monthlyAmount: number, entryDate: string) => {
@@ -55,191 +53,6 @@ const calculateProRata = (monthlyAmount: number, entryDate: string) => {
   return { amount, days: daysOccupied, totalDays, isProRata: true };
 };
 
-// --- DATOS CORPORATIVOS ---
-const COMPANY_INFO = {
-  name_ja: "ユニバーサル企画株式会社", name_en: "UNS-KIKAKU",
-  postal_code: "461-0025", full_address: "愛知県名古屋市東区徳川2-18-18",
-  phone: "052-938-8840", mobile: "080-7376-1988",
-  email: "infoapp@uns-kikaku.com", representative: "中山 雅和",
-  licenses: [
-    { name: "労働者派遣事業", number: "派 23-303669" },
-    { name: "登録支援機関", number: "21登-006367" },
-    { name: "古物商許可証", number: "愛知県公安委員会 第541032001..." }
-  ],
-  logo_url: "https://uns-kikaku.com/wp-content/uploads/2024/02/rogo-300x123.png"
-};
-
-const INITIAL_DB: AppDatabase = {
-  properties: [], tenants: [], employees: [],
-  config: { companyName: COMPANY_INFO.name_en, closingDay: 0, defaultCleaningFee: 30000 }
-};
-
-// --- UI COMPONENTS ---
-const GlassCard = ({ children, className = "", hoverEffect = true }: { children: React.ReactNode; className?: string; hoverEffect?: boolean }) => (
-  <div className={`relative overflow-hidden rounded-2xl border border-white/10 bg-[#1a1d24]/80 backdrop-blur-md shadow-xl ${hoverEffect ? 'transition-all duration-300 hover:border-blue-500/30 hover:bg-[#20242c] hover:shadow-blue-900/10 hover:-translate-y-1' : ''} ${className}`}>
-    <div className="absolute -top-10 -right-10 w-24 h-24 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
-    {children}
-  </div>
-);
-
-const StatCard = ({ title, value, subtext, icon: Icon, trend }: { title: string; value: string; subtext: string; icon: React.ComponentType<{ className?: string }>; trend?: 'up' | 'down' }) => (
-  <GlassCard hoverEffect={true} className="p-5">
-    <div className="flex justify-between items-start mb-3">
-      <div className="p-2.5 bg-gradient-to-br from-gray-800 to-black rounded-xl border border-white/5 shadow-inner"><Icon className="text-blue-400 w-5 h-5" /></div>
-      {trend && <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${trend === 'up' ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>{trend === 'up' ? '▲' : '▼'}</span>}
-    </div>
-    <div className="space-y-1">
-      <h3 className="text-gray-400 text-[10px] uppercase tracking-widest font-bold">{title}</h3>
-      <div className="text-3xl font-black text-white tracking-tight leading-none">{value}</div>
-      <div className="text-xs text-gray-500 font-medium">{subtext}</div>
-    </div>
-  </GlassCard>
-);
-
-const Modal = ({ isOpen, onClose, title, children, wide = false }: { isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) => {
-  const overlayRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
-  }, [isOpen, onClose]);
-  if (!isOpen) return null;
-  return (
-    <div ref={overlayRef} role="dialog" aria-modal="true" aria-labelledby="modal-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300" onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}>
-      <div className={`bg-[#15171c] border border-blue-500/20 rounded-2xl w-full ${wide ? 'max-w-5xl' : 'max-w-3xl'} shadow-2xl relative max-h-[90vh] overflow-y-auto ring-1 ring-white/10 animate-in zoom-in-95 duration-300`}>
-        <div className="flex justify-between items-center p-6 border-b border-gray-800/50 sticky top-0 bg-[#15171c]/95 backdrop-blur z-20">
-          <h3 id="modal-title" className="text-xl font-bold text-white flex items-center gap-3">
-            <div className="w-1 h-6 bg-gradient-to-b from-blue-400 to-blue-600 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>{title}
-          </h3>
-          <button onClick={onClose} aria-label="Cerrar" className="text-gray-500 hover:text-white transition bg-gray-900/50 p-2 rounded-full hover:bg-gray-800 border border-transparent hover:border-gray-700"><X className="w-5 h-5" /></button>
-        </div>
-        <div className="p-6 md:p-8 space-y-6">{children}</div>
-      </div>
-    </div>
-  );
-};
-
-const NavButton = ({ icon: Icon, active, onClick, label }: { icon: React.ComponentType<{ className?: string }>; active: boolean; onClick: () => void; label: string }) => (
-  <button onClick={onClick} aria-label={label} title={label} className={`relative group w-12 h-12 flex flex-col items-center justify-center rounded-xl transition-all duration-300 ${active ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 scale-110' : 'text-gray-500 hover:text-white hover:bg-white/10'}`}>
-    <Icon className={`w-5 h-5 ${active ? 'stroke-[2.5px]' : 'stroke-2'}`} />
-    <span className="absolute left-14 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap border border-white/10 pointer-events-none z-50">{label}</span>
-  </button>
-);
-
-const NavButtonMobile = ({ icon: Icon, active, onClick, label }: { icon: React.ComponentType<{ className?: string }>; active: boolean; onClick: () => void; label: string }) => (
-  <button onClick={onClick} aria-label={label} className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all ${active ? 'text-blue-400' : 'text-gray-500'}`}>
-    <Icon className={`w-6 h-6 mb-1 ${active ? 'stroke-[2.5px]' : 'stroke-2'}`} />
-    <span className="text-[10px] font-bold tracking-wide">{label}</span>
-  </button>
-);
-
-// --- SETTINGS VIEW ---
-const SettingsView = ({ db, setDb, onDownloadBackup, onRestoreBackup, onReset }: { db: AppDatabase; setDb: (db: AppDatabase) => void; onDownloadBackup: () => void; onRestoreBackup: (e: React.ChangeEvent<HTMLInputElement>) => void; onReset: () => void }) => {
-  const [localConfig, setLocalConfig] = useState(db.config || INITIAL_DB.config);
-  const handleSaveConfig = () => { setDb({ ...db, config: localConfig }); alert('Configuración guardada.'); };
-  return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-4xl mx-auto pb-20">
-      <div className="flex flex-col md:flex-row items-center gap-6 bg-gradient-to-r from-[#1a1d24] to-[#0f0f12] p-8 rounded-3xl border border-white/5 shadow-2xl">
-        <div className="bg-white p-4 rounded-xl shadow-lg"><img src={COMPANY_INFO.logo_url} alt="UNS" className="h-12 object-contain" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = "https://via.placeholder.com/150x60?text=UNS"; }} /></div>
-        <div className="text-center md:text-left">
-          <h2 className="text-2xl font-black text-white">{COMPANY_INFO.name_ja}</h2>
-          <p className="text-blue-400 font-bold tracking-widest text-sm">{COMPANY_INFO.name_en}</p>
-          <div className="flex flex-wrap gap-4 mt-3 text-xs text-gray-400 justify-center md:justify-start">
-            <span className="flex items-center gap-1"><MapPin className="w-3 h-3"/> {COMPANY_INFO.full_address}</span>
-            <span className="flex items-center gap-1"><Phone className="w-3 h-3"/> {COMPANY_INFO.phone}</span>
-            <span className="flex items-center gap-1"><Mail className="w-3 h-3"/> {COMPANY_INFO.email}</span>
-          </div>
-        </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {COMPANY_INFO.licenses.map((lic, idx) => (
-          <div key={idx} className="bg-[#1a1d24] border border-white/5 p-4 rounded-xl flex items-center gap-3">
-            <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400"><Award className="w-5 h-5"/></div>
-            <div><div className="text-[10px] text-gray-500 uppercase font-bold">{lic.name}</div><div className="text-sm text-white font-mono">{lic.number}</div></div>
-          </div>
-        ))}
-      </div>
-      <div className="border-t border-gray-800 my-4"></div>
-      <GlassCard className="p-6">
-        <h3 className="text-lg font-bold text-green-500 mb-4 flex items-center gap-2"><Clock className="w-5 h-5"/> Ciclo de Facturación</h3>
-        <label className="text-xs text-gray-400 block mb-2 font-bold uppercase">Día de Cierre (締め日)</label>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[0, 15, 20, 25].map(day => (
-            <button key={day} onClick={() => setLocalConfig({...localConfig, closingDay: day})} className={`p-3 rounded-xl border text-sm font-bold transition-all ${localConfig.closingDay === day ? 'bg-green-500/20 border-green-500 text-green-400' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}`}>
-              {day === 0 ? 'Fin de Mes (末日)' : `Día ${day} (日)`}
-            </button>
-          ))}
-        </div>
-        <div className="flex justify-end mt-4"><button onClick={handleSaveConfig} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg shadow-blue-500/20 flex items-center gap-2 text-sm"><Save className="w-4 h-4" /> Guardar</button></div>
-      </GlassCard>
-      <GlassCard className="p-6">
-        <h3 className="text-lg font-bold text-red-400 mb-4 flex items-center gap-2"><Trash2 className="w-5 h-5"/> クリーニング費 (Limpieza al salir)</h3>
-        <p className="text-xs text-gray-500 mb-3">Monto que se cobra al inquilino al dar de baja. Se registra automáticamente en el historial.</p>
-        <div className="flex items-center gap-3">
-          <span className="text-gray-400 text-lg font-bold">¥</span>
-          <input type="number" step="1000" className="w-48 bg-black/50 border border-gray-700 p-3 rounded-xl text-white font-mono text-lg focus:border-red-500 outline-none transition" value={localConfig.defaultCleaningFee ?? 30000} onChange={e => setLocalConfig({...localConfig, defaultCleaningFee: parseInt(e.target.value) || 0})} />
-          <span className="text-gray-500 text-xs">por persona</span>
-        </div>
-        <div className="flex justify-end mt-4"><button onClick={handleSaveConfig} className="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg shadow-red-500/20 flex items-center gap-2 text-sm"><Save className="w-4 h-4" /> Guardar</button></div>
-      </GlassCard>
-      <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><Database className="w-6 h-6 text-blue-500"/> Gestión de Datos</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <GlassCard className="p-6 border-blue-500/30 bg-blue-900/10">
-          <div className="flex items-center gap-4 mb-4"><div className="p-3 bg-blue-500/20 rounded-full text-blue-400"><Download className="w-6 h-6" /></div><div><h3 className="text-lg font-bold text-white">Respaldo</h3><p className="text-xs text-blue-200">Guardar .JSON</p></div></div>
-          <button onClick={onDownloadBackup} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-blue-500/20 flex justify-center gap-2"><Save className="w-4 h-4" /> Descargar</button>
-        </GlassCard>
-        <GlassCard className="p-6 border-purple-500/30 bg-purple-900/10">
-          <div className="flex items-center gap-4 mb-4"><div className="p-3 bg-purple-500/20 rounded-full text-purple-400"><Upload className="w-6 h-6" /></div><div><h3 className="text-lg font-bold text-white">Restaurar</h3><p className="text-xs text-purple-200">Cargar .JSON</p></div></div>
-          <label className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-purple-500/20 flex justify-center gap-2 cursor-pointer text-center"><UploadCloud className="w-4 h-4" /><span>Subir</span><input type="file" accept=".json" className="hidden" onChange={onRestoreBackup} /></label>
-        </GlassCard>
-      </div>
-      <div className="mt-8 pt-4 border-t border-red-900/30">
-        <button onClick={onReset} className="w-full text-red-500 hover:text-red-400 hover:bg-red-900/10 p-4 rounded-xl text-sm flex gap-2 items-center justify-center transition-colors uppercase tracking-widest font-bold border border-transparent hover:border-red-900/50"><Trash2 className="w-5 h-5"/> Resetear Sistema</button>
-      </div>
-    </div>
-  );
-};
-
-// --- IMPORT VIEW ---
-const ImportViewComponent = ({ isDragging, importStatus, previewSummary, onDragOver, onDragLeave, onDrop, onFileChange, onSave }: { isDragging: boolean; importStatus: { type: string; msg: string }; previewSummary: string; onDragOver: (e: React.DragEvent) => void; onDragLeave: (e: React.DragEvent) => void; onDrop: (e: React.DragEvent) => void; onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void; onSave: () => void; }) => (
-  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-4xl mx-auto pb-20">
-    <div className="flex flex-col items-center justify-center py-10">
-      <h2 className="text-3xl font-black text-white mb-2">Centro de Sincronización</h2>
-      <p className="text-gray-500 max-w-md text-center">Importa la 社員台帳 (maestro empleados) o archivos de gestión de renta.</p>
-    </div>
-    <GlassCard className="p-10 text-center border-dashed border-2 border-gray-700 bg-transparent relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-green-500/5 to-transparent pointer-events-none"></div>
-      <input type="file" id="fileUpload" className="hidden" onChange={onFileChange} accept=".xlsx, .xlsm" />
-      <label htmlFor="fileUpload" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop} className={`flex flex-col items-center justify-center h-64 cursor-pointer transition-all duration-300 rounded-2xl relative z-10 ${isDragging ? 'scale-105' : ''}`}>
-        {importStatus.type === 'loading' ? (
-          <div className="animate-pulse flex flex-col items-center gap-4"><Loader2 className="w-20 h-20 text-blue-500 animate-spin" /><p className="text-blue-500 font-bold text-2xl">Procesando...</p></div>
-        ) : importStatus.type === 'success' ? (
-          <div className="flex flex-col items-center gap-4"><div className="w-24 h-24 bg-green-500/20 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(34,197,94,0.4)]"><FileCheck className="w-12 h-12 text-green-400" /></div><p className="text-green-400 font-bold text-3xl">Archivo Validado</p><p className="text-gray-400 text-lg">Listo para sincronizar</p></div>
-        ) : (
-          <div className="flex flex-col items-center gap-6 group">
-            <div className="w-24 h-24 bg-gray-800 rounded-full flex items-center justify-center group-hover:bg-blue-600 transition-all duration-500 shadow-2xl border border-white/5"><UploadCloud className="w-10 h-10 text-gray-400 group-hover:text-white transition-colors" /></div>
-            <div><p className="text-2xl font-bold text-white mb-2 group-hover:text-blue-400 transition-colors">Arrastra tu Excel aquí</p><p className="text-sm text-gray-500">社員台帳 (.xlsx / .xlsm)</p></div>
-          </div>
-        )}
-      </label>
-    </GlassCard>
-    {importStatus.type === 'error' && <div className="bg-red-900/20 border border-red-500/50 p-6 rounded-2xl text-red-200 flex items-center gap-4 animate-in fade-in shadow-lg"><AlertCircle className="w-6 h-6 shrink-0" /><span className="text-lg font-medium">{importStatus.msg}</span></div>}
-    {importStatus.type === 'success' && (
-      <div className="bg-gray-900 border border-green-500/30 rounded-2xl p-8 shadow-2xl animate-in slide-in-from-bottom-10">
-        <div className="flex items-start gap-6">
-          <div className="bg-green-500/20 p-4 rounded-xl"><Database className="w-8 h-8 text-green-500" /></div>
-          <div className="flex-1">
-            <h3 className="text-2xl font-bold text-white mb-3">Confirmación</h3>
-            <div className="bg-black/50 p-6 rounded-xl border border-white/5 mb-8"><pre className="text-sm text-green-400 font-mono whitespace-pre-wrap leading-relaxed">{String(previewSummary)}</pre></div>
-            <button onClick={onSave} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-3 transition-all text-lg"><span>Ejecutar Sincronización</span><ArrowRight className="w-6 h-6" /></button>
-          </div>
-        </div>
-      </div>
-    )}
-  </div>
-);
-
 const EMPTY_PROPERTY_FORM = { id: null as number | null, name: '', room_number: '', postal_code: '', address_auto: '', address_detail: '', manager_name: '', manager_phone: '', contract_start: new Date().toISOString().split('T')[0], contract_end: '', type: '1K', capacity: 2, rent_cost: 0, rent_price_uns: 0, parking_cost: 0, kanri_hi: 0, billing_mode: 'fixed' as const };
 const EMPTY_TENANT_FORM = { employee_id: '', name: '', name_kana: '', company: '', property_id: '' as string | number, rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0] };
 
@@ -250,24 +63,8 @@ export default function App() {
   useLoadSheetJS();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
-  const [db, setDb] = useState<AppDatabase>(() => {
-    try {
-      const s = localStorage.getItem('uns_db_v6_0');
-      if (!s) return INITIAL_DB;
-      const parsed = JSON.parse(s);
-      if (!parsed.properties || !Array.isArray(parsed.properties) || !parsed.tenants || !Array.isArray(parsed.tenants) || !parsed.employees || !Array.isArray(parsed.employees)) {
-        console.warn('Corrupt localStorage data, resetting to defaults');
-        return INITIAL_DB;
-      }
-      if (!parsed.config) parsed.config = INITIAL_DB.config;
-      if (parsed.config.defaultCleaningFee === undefined) parsed.config.defaultCleaningFee = 30000;
-      return parsed;
-    } catch { return INITIAL_DB; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem('uns_db_v6_0', JSON.stringify(db)); }
-    catch (e) { if (e instanceof DOMException && (e.code === 22 || e.name === 'QuotaExceededError')) alert('Almacenamiento lleno. Respalde sus datos desde Configuración.'); }
-  }, [db]);
+  // IndexedDB (Dexie) — reemplaza localStorage
+  const { db, setDb, isLoading: isDbLoading, resetDb } = useIndexedDB();
 
   // --- ESTADOS ---
   const [isDragging, setIsDragging] = useState(false);
@@ -289,6 +86,7 @@ export default function App() {
   const [empSearch, setEmpSearch] = useState('');
   const [empPage, setEmpPage] = useState(1);
   const EMP_PER_PAGE = 50;
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
 
   const [tenantForm, setTenantForm] = useState<any>({
     employee_id: '', name: '', name_kana: '', company: '', property_id: '',
@@ -300,9 +98,21 @@ export default function App() {
     capacity: 2, rent_cost: 0, rent_price_uns: 0, parking_cost: 0, kanri_hi: 0, billing_mode: 'fixed'
   });
 
+  // Snapshots para detectar cambios sin guardar (B13)
+  const propertyFormSnapshot = useRef('');
+  const tenantFormSnapshot = useRef('');
+  const employeeSnapshot = useRef('');
+
+  const confirmDiscardChanges = useCallback((currentJson: string, initialJson: string): boolean => {
+    if (currentJson !== initialJson) {
+      return window.confirm('Hay cambios sin guardar. ¿Descartar?');
+    }
+    return true;
+  }, []);
+
   // --- CICLO ---
   const cycle = useMemo(() => {
-    const now = new Date(); const cd = db.config?.closingDay || 0;
+    const now = new Date(); const cd = db.config?.closingDay ?? 0;
     let s: Date, e: Date;
     if (cd === 0) { s = new Date(now.getFullYear(), now.getMonth(), 1); e = new Date(now.getFullYear(), now.getMonth() + 1, 0); }
     else if (now.getDate() <= cd) { s = new Date(now.getFullYear(), now.getMonth() - 1, cd + 1); e = new Date(now.getFullYear(), now.getMonth(), cd); }
@@ -313,7 +123,7 @@ export default function App() {
 
   // --- MÉTRICAS ---
   const dashboardData = useMemo(() => {
-    const ap = db.properties.filter(p => { if (!p.contract_end) return true; const d = new Date(p.contract_end); return isNaN(d.getTime()) || d > new Date(); });
+    const ap = db.properties.filter(isPropertyActive);
     const occ = db.tenants.filter(t => t.property_id !== null && t.status === 'active').length;
     const cap = ap.reduce((a, b) => a + (b.capacity || 0), 0);
     const rent = db.tenants.reduce((a, t) => a + (t.status === 'active' ? t.rent_contribution : 0), 0);
@@ -323,7 +133,7 @@ export default function App() {
     const target = ap.reduce((a, p) => a + (p.rent_price_uns || 0), 0);
     const alerts: AlertItem[] = [];
     const today = new Date();
-    ap.forEach(p => { if (p.contract_end) { const d = Math.ceil(Math.abs(new Date(p.contract_end).getTime() - today.getTime()) / 86400000); if (d <= 60) alerts.push({ type: 'warning', msg: `${p.name}: contrato vence en ${d} días.` }); } });
+    ap.forEach(p => { if (p.contract_end) { const d = Math.ceil((new Date(p.contract_end).getTime() - today.getTime()) / 86400000); if (d > 0 && d <= 60) alerts.push({ type: 'warning', msg: `${p.name}: contrato vence en ${d} días.` }); if (d <= 0) alerts.push({ type: 'danger', msg: `${p.name}: contrato vencido.` }); } });
     const zr = db.tenants.filter(t => t.status === 'active' && t.rent_contribution === 0);
     if (zr.length > 0) alerts.push({ type: 'danger', msg: `${zr.length} inquilinos con renta ¥0.` });
     return { totalProperties: ap.length, occupiedCount: occ, totalCapacity: cap, occupancyRate: cap > 0 ? Math.round(occ / cap * 100) : 0, profit: col - cost, totalCollected: col, totalPropCost: cost, totalTargetUNS: target, alerts };
@@ -333,7 +143,23 @@ export default function App() {
   const downloadBackup = () => { const a = document.createElement('a'); a.href = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db)); a.download = `UNS_Backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); };
   const restoreBackup = (event: React.ChangeEvent<HTMLInputElement>) => {
     const f = event.target.files?.[0]; if (!f) return;
-    const r = new FileReader(); r.onload = (e) => { try { const d = JSON.parse(e.target?.result as string); if (d.properties) { setDb(d); alert('Restaurado!'); } else alert('Archivo inválido.'); } catch { alert('Error de lectura.'); } }; r.readAsText(f);
+    const r = new FileReader();
+    r.onload = (e) => {
+      try {
+        const d = JSON.parse(e.target?.result as string);
+        const v = validateBackup(d);
+        if (!v.success) { alert('Archivo inválido: ' + v.errors.map(e => e.message).join(', ')); return; }
+        setDb({
+          properties: d.properties || [],
+          tenants: d.tenants || [],
+          employees: d.employees || [],
+          config: { companyName: d.config?.companyName || 'UNS-KIKAKU', closingDay: d.config?.closingDay ?? 0, defaultCleaningFee: d.config?.defaultCleaningFee ?? 30000 },
+        });
+        alert('Restaurado!');
+      } catch { alert('Error de lectura.'); }
+    };
+    r.onerror = () => { alert('Error al leer archivo.'); };
+    r.readAsText(f);
   };
 
   // --- EMPLOYEE LOOKUP ---
@@ -350,8 +176,11 @@ export default function App() {
     setAddressSearchError(''); const zip = propertyForm.postal_code.replace(/-/g, '');
     if (zip.length !== 7) { setAddressSearchError('7 dígitos.'); return; }
     setIsSearchingAddress(true);
-    try { const r = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zip}`); const d = await r.json(); if (d.results) { const a = d.results[0]; setPropertyForm((p: any) => ({ ...p, address_auto: `${a.address1}${a.address2}${a.address3}` })); } else setAddressSearchError('No encontrado.'); }
-    catch { setAddressSearchError('Error de conexión.'); } finally { setIsSearchingAddress(false); }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try { const r = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zip}`, { signal: controller.signal }); const d = await r.json(); if (d.results) { const a = d.results[0]; setPropertyForm((p: any) => ({ ...p, address_auto: `${a.address1}${a.address2}${a.address3}` })); } else setAddressSearchError('No encontrado.'); }
+    catch (err) { setAddressSearchError(err instanceof DOMException && err.name === 'AbortError' ? 'Timeout (10s). Reintentar.' : 'Error de conexión.'); }
+    finally { clearTimeout(timeout); setIsSearchingAddress(false); }
   };
 
   const uniqueCompanies = useMemo(() => {
@@ -372,20 +201,85 @@ export default function App() {
   }, [db.properties, db.tenants, searchTerm, companyFilter]);
 
   const filteredEmployees = useMemo(() => {
-    const t = empSearch.toLowerCase(); if (!t) return db.employees;
-    return db.employees.filter(e => e.id.includes(t) || e.name.toLowerCase().includes(t) || e.name_kana.toLowerCase().includes(t) || e.company.toLowerCase().includes(t));
-  }, [db.employees, empSearch]);
+    let result = db.employees;
+    // Filtro local (tab empleados)
+    const local = empSearch.toLowerCase();
+    if (local) result = result.filter(e => e.id.includes(local) || e.name.toLowerCase().includes(local) || e.name_kana.toLowerCase().includes(local) || e.company.toLowerCase().includes(local));
+    // Filtro global (header search) — se aplica además del local
+    const global = searchTerm.toLowerCase();
+    if (global) result = result.filter(e => e.id.includes(global) || e.name.toLowerCase().includes(global) || e.name_kana.toLowerCase().includes(global) || e.company.toLowerCase().includes(global));
+    return result;
+  }, [db.employees, empSearch, searchTerm]);
+
+  // Inquilinos filtrados por búsqueda global
+  const filteredTenants = useMemo(() => {
+    const t = searchTerm.toLowerCase();
+    if (!t) return [];
+    return db.tenants.filter(tn => tn.name.toLowerCase().includes(t) || tn.name_kana.toLowerCase().includes(t) || tn.employee_id.includes(t) || (tn.company || '').toLowerCase().includes(t));
+  }, [db.tenants, searchTerm]);
 
   // --- ACTIONS ---
   const openRentManager = (p: Property) => { setSelectedPropertyForRent(p); setIsRentManagerOpen(true); };
 
   const handleSaveProperty = (e: React.FormEvent) => {
-    e.preventDefault(); const newDb: AppDatabase = JSON.parse(JSON.stringify(db));
+    e.preventDefault();
     const addr = propertyForm.postal_code ? `〒${propertyForm.postal_code} ${propertyForm.address_auto} ${propertyForm.address_detail}` : `${propertyForm.address_auto} ${propertyForm.address_detail}`;
-    const cp = { ...propertyForm, address: addr.trim(), capacity: parseInt(propertyForm.capacity) || 0, rent_cost: parseInt(propertyForm.rent_cost) || 0, rent_price_uns: parseInt(propertyForm.rent_price_uns) || 0, parking_cost: parseInt(propertyForm.parking_cost) || 0, kanri_hi: parseInt(propertyForm.kanri_hi) || 0 };
-    if (propertyForm.id) { const i = newDb.properties.findIndex(p => p.id === propertyForm.id); if (i >= 0) newDb.properties[i] = cp; }
-    else newDb.properties.push({ ...cp, id: Date.now() });
-    setDb(newDb); setIsPropertyModalOpen(false);
+    const cp = { ...propertyForm, address: addr.trim() };
+    // Validar con Zod
+    const validation = validateProperty(cp);
+    if (!validation.success) {
+      alert('Error de validación:\n' + validation.errors.map(e => `• ${e.field}: ${e.message}`).join('\n'));
+      return;
+    }
+    setDb(prev => {
+      const newProps = [...prev.properties];
+      if (propertyForm.id) { const i = newProps.findIndex(p => p.id === propertyForm.id); if (i >= 0) newProps[i] = cp; }
+      else newProps.push({ ...cp, id: generateId() });
+      return { ...prev, properties: newProps };
+    });
+    setIsPropertyModalOpen(false);
+  };
+
+  const handleDeleteProperty = (pid: number) => {
+    const prop = db.properties.find(p => p.id === pid);
+    if (!prop) return;
+    const activeTs = db.tenants.filter(t => t.property_id === pid && t.status === 'active');
+    if (activeTs.length > 0) { alert(`No se puede eliminar "${prop.name}": tiene ${activeTs.length} inquilino(s) activo(s). Dar de baja primero.`); return; }
+    if (!window.confirm(`¿Eliminar propiedad "${prop.name}" permanentemente?\n\nEsta acción no se puede deshacer.`)) return;
+    setDb(prev => ({ ...prev, properties: prev.properties.filter(p => p.id !== pid), tenants: prev.tenants.filter(t => t.property_id !== pid) }));
+    setIsRentManagerOpen(false);
+    setIsPropertyModalOpen(false);
+  };
+
+  const reactivateTenant = (tid: number) => {
+    const tenant = db.tenants.find(t => t.id === tid);
+    if (!tenant) return;
+    if (db.tenants.find(t => t.employee_id === tenant.employee_id && t.status === 'active')) { alert(`社員No ${tenant.employee_id} ya está asignado a otro apartamento.`); return; }
+    if (!window.confirm(`¿Reactivar a ${tenant.name}?`)) return;
+    setDb(prev => {
+      const updated = { ...prev, tenants: prev.tenants.map(t => t.id === tid ? { ...t, status: 'active' as const, exit_date: undefined, cleaning_fee: undefined } : t) };
+      return autoSplitRent(updated, tenant.property_id);
+    });
+  };
+
+  const handleSaveEmployee = () => {
+    if (!editingEmployee) return;
+    if (!editingEmployee.id.trim() || !editingEmployee.name.trim()) { alert('ID y nombre son obligatorios.'); return; }
+    setDb(prev => {
+      const idx = prev.employees.findIndex(e => e.id === editingEmployee.id);
+      if (idx >= 0) { const emps = [...prev.employees]; emps[idx] = editingEmployee; return { ...prev, employees: emps }; }
+      return prev;
+    });
+    setEditingEmployee(null);
+  };
+
+  const handleDeleteEmployee = (empId: string) => {
+    const emp = db.employees.find(e => e.id === empId);
+    if (!emp) return;
+    const isAssigned = db.tenants.some(t => t.employee_id === empId && t.status === 'active');
+    if (isAssigned) { alert(`No se puede eliminar: ${emp.name} está asignado a una propiedad activa.`); return; }
+    if (!window.confirm(`¿Eliminar empleado "${emp.name}" (${empId})?`)) return;
+    setDb(prev => ({ ...prev, employees: prev.employees.filter(e => e.id !== empId) }));
   };
 
   const handleUpdateRentDetails = (tid: number, field: string, val: string) => {
@@ -393,28 +287,45 @@ export default function App() {
     setDb(prev => ({ ...prev, tenants: prev.tenants.map(t => t.id === tid ? { ...t, [field]: v } : t) }));
   };
 
-  const distributeRentEvenly = () => {
-    if (!selectedPropertyForRent) return;
-    const ts = db.tenants.filter(t => t.property_id === selectedPropertyForRent.id && t.status === 'active');
-    if (ts.length === 0) { alert('No hay inquilinos activos para dividir la renta.'); return; }
-    const split = Math.floor(selectedPropertyForRent.rent_price_uns / ts.length);
-    const remainder = selectedPropertyForRent.rent_price_uns % ts.length;
-    setDb(prev => ({ ...prev, tenants: prev.tenants.map((t, i) => {
-      if (t.property_id === selectedPropertyForRent.id && t.status === 'active') {
+  // Redistribuir renta equitativamente (para billing_mode='split')
+  const autoSplitRent = (dbState: AppDatabase, propertyId: number): AppDatabase => {
+    const prop = dbState.properties.find(p => p.id === propertyId);
+    if (!prop || prop.billing_mode !== 'split') return dbState;
+    const ts = dbState.tenants.filter(t => t.property_id === propertyId && t.status === 'active');
+    if (ts.length === 0) return dbState;
+    const split = Math.floor((prop.rent_price_uns || 0) / ts.length);
+    const remainder = (prop.rent_price_uns || 0) % ts.length;
+    return { ...dbState, tenants: dbState.tenants.map(t => {
+      if (t.property_id === propertyId && t.status === 'active') {
         const idx = ts.findIndex(x => x.id === t.id);
         return { ...t, rent_contribution: idx === 0 ? split + remainder : split };
       }
       return t;
-    })}));
+    })};
+  };
+
+  const distributeRentEvenly = () => {
+    if (!selectedPropertyForRent) return;
+    setDb(prev => autoSplitRent(prev, selectedPropertyForRent.id));
   };
 
   const handleAddTenant = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenantForm.employee_id.trim() || !tenantForm.name.trim()) { alert('社員No y Nombre son obligatorios.'); return; }
     if (!tenantForm.property_id) { alert('Error: propiedad no seleccionada.'); return; }
+    const propId = Number(tenantForm.property_id);
+    const tenantData = { ...tenantForm, property_id: propId, status: 'active' as const };
+    // Validar con Zod
+    const validation = validateTenant(tenantData);
+    if (!validation.success) {
+      alert('Error de validación:\n' + validation.errors.map(e => `• ${e.field}: ${e.message}`).join('\n'));
+      return;
+    }
     if (db.tenants.find(t => t.employee_id === tenantForm.employee_id && t.status === 'active')) { alert('Este 社員No ya está asignado a otro apartamento.'); return; }
-    const newT: Tenant = { id: Date.now(), ...tenantForm, property_id: parseInt(tenantForm.property_id), rent_contribution: parseInt(tenantForm.rent_contribution) || 0, parking_fee: parseInt(tenantForm.parking_fee) || 0, status: 'active' };
-    setDb(prev => ({ ...prev, tenants: [...prev.tenants, newT] }));
+    const newT: Tenant = { id: generateId(), ...tenantData };
+    setDb(prev => {
+      const updated = { ...prev, tenants: [...prev.tenants, newT] };
+      return autoSplitRent(updated, propId);
+    });
     setIsAddTenantModalOpen(false);
     setTenantForm({ employee_id: '', name: '', name_kana: '', company: '', property_id: '', rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0] });
   };
@@ -425,7 +336,10 @@ export default function App() {
     const fee = db.config.defaultCleaningFee || 30000;
     if (!window.confirm(`¿Dar de baja a ${tenant.name}?\n\nSe aplicará クリーニング費 (limpieza): ¥${fee.toLocaleString()}`)) return;
     const exitDate = new Date().toISOString().split('T')[0];
-    setDb(prev => ({ ...prev, tenants: prev.tenants.map(t => t.id === tid ? { ...t, status: 'inactive' as const, exit_date: exitDate, cleaning_fee: fee } : t) }));
+    setDb(prev => {
+      const updated = { ...prev, tenants: prev.tenants.map(t => t.id === tid ? { ...t, status: 'inactive' as const, exit_date: exitDate, cleaning_fee: fee } : t) };
+      return autoSplitRent(updated, tenant.property_id);
+    });
   };
 
   // --- IMPORT ---
@@ -435,6 +349,7 @@ export default function App() {
     reader.onload = (e) => {
       try {
         const X = (window as any).XLSX;
+        if (!X) { setImportStatus({ type: 'error', msg: 'SheetJS aún no terminó de cargar. Espere e intente de nuevo.' }); return; }
         const wb = X.read(new Uint8Array(e.target?.result as ArrayBuffer), { type: 'array' });
         const sn: string[] = wb.SheetNames;
         let emp = sn.find((n: string) => n.includes('Genzai') || n.includes('Ukeoi') || n.includes('台帳'));
@@ -459,14 +374,26 @@ export default function App() {
       tab = 'employees';
     } else if (detectedType === 'rent_management') {
       const { properties, tenants } = previewData;
-      properties.forEach((r: any, idx: number) => { const n = r['ｱﾊﾟｰﾄ'] || r['物件名']; if (!n) return; const ex = newDb.properties.find(p => p.name === n); const pid = ex ? ex.id : Date.now() + idx; const o: Property = { id: pid, name: String(n).trim(), address: String(r['住所'] || '').trim(), capacity: parseInt(r['入居人数'] || 2) || 2, rent_cost: parseInt(r['家賃'] || 0), rent_price_uns: parseInt(r['USN家賃'] || 0), parking_cost: parseInt(r['駐車場代'] || 0) }; if (ex) Object.assign(ex, o); else newDb.properties.push(o); });
-      tenants.forEach((r: any, idx: number) => { const apt = r['ｱﾊﾟｰﾄ']; const kana = r['カナ']; if (!apt || !kana) return; const pr = newDb.properties.find(p => p.name === apt); if (!pr) return; if (!newDb.tenants.find(t => t.name_kana === kana && t.property_id === pr.id)) newDb.tenants.push({ id: Date.now() + idx, employee_id: `IMP-${idx}`, name: kana, name_kana: kana, property_id: pr.id, rent_contribution: parseInt(r['家賃'] || 0), parking_fee: parseInt(r['駐車場'] || 0), entry_date: r['入居'] || new Date().toISOString().split('T')[0], status: 'active' }); });
+      properties.forEach((r: any) => { const n = r['ｱﾊﾟｰﾄ'] || r['物件名']; if (!n) return; const ex = newDb.properties.find(p => p.name === n); const pid = ex ? ex.id : generateId(); const o: Property = { id: pid, name: String(n).trim(), address: String(r['住所'] || '').trim(), capacity: parseInt(r['入居人数'] || 2) || 2, rent_cost: parseInt(r['家賃'] || 0), rent_price_uns: parseInt(r['USN家賃'] || 0), parking_cost: parseInt(r['駐車場代'] || 0) }; if (ex) Object.assign(ex, o); else newDb.properties.push(o); });
+      tenants.forEach((r: any, idx: number) => { const apt = r['ｱﾊﾟｰﾄ']; const kana = r['カナ']; if (!apt || !kana) return; const pr = newDb.properties.find(p => p.name === apt); if (!pr) return; if (!newDb.tenants.find(t => t.name_kana === kana && t.property_id === pr.id)) newDb.tenants.push({ id: generateId(), employee_id: `IMP-${idx}`, name: kana, name_kana: kana, property_id: pr.id, rent_contribution: parseInt(r['家賃'] || 0), parking_fee: parseInt(r['駐車場'] || 0), entry_date: r['入居'] || new Date().toISOString().split('T')[0], status: 'active' }); });
       tab = 'properties';
     }
     setDb(newDb); setPreviewData([]); setDetectedType(null); setImportStatus({ type: '', msg: '' }); setActiveTab(tab);
   };
 
   // --- RENDER ---
+  if (isDbLoading) {
+    return (
+      <div className="min-h-screen bg-[#0d0f12] flex items-center justify-center">
+        <div className="text-center space-y-4 animate-pulse">
+          <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto" />
+          <div className="text-white font-bold text-lg">Cargando UNS Estate OS...</div>
+          <div className="text-gray-500 text-xs">Inicializando base de datos</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0d0f12] text-gray-200 font-sans selection:bg-blue-500 selection:text-white overflow-x-hidden">
       <div className="fixed inset-0 pointer-events-none z-0">
@@ -482,7 +409,7 @@ export default function App() {
         </div>
         <div className="flex items-center bg-[#15171c] border border-white/10 rounded-full px-3 py-2 flex-1 mx-3 md:mx-0 md:flex-none md:w-96 focus-within:border-blue-500/50 transition-all group">
           <Search className="w-4 h-4 text-gray-500 group-focus-within:text-blue-500 transition-colors shrink-0" />
-          <input type="text" placeholder="Buscar..." className="bg-transparent border-none outline-none text-sm text-white w-full ml-2 placeholder-gray-600" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); if (e.target.value) setActiveTab('properties'); }} />
+          <input type="text" placeholder="Buscar propiedades, empleados, inquilinos..." className="bg-transparent border-none outline-none text-sm text-white w-full ml-2 placeholder-gray-600" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && searchTerm) { const counts = [{ tab: 'properties', n: filteredProperties.length }, { tab: 'employees', n: filteredEmployees.length }, { tab: 'properties', n: filteredTenants.length }]; const best = counts.sort((a, b) => b.n - a.n)[0]; setActiveTab(best.n > 0 ? best.tab : 'properties'); } }} />
           {searchTerm && <button onClick={() => setSearchTerm('')} className="text-gray-500 hover:text-white shrink-0"><X className="w-3.5 h-3.5"/></button>}
         </div>
         <div className="flex items-center gap-2">
@@ -497,6 +424,7 @@ export default function App() {
           <NavButton icon={LayoutDashboard} active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} label="HQ" />
           <NavButton icon={Building} active={activeTab === 'properties'} onClick={() => setActiveTab('properties')} label="Prop." />
           <NavButton icon={Users} active={activeTab === 'employees'} onClick={() => setActiveTab('employees')} label="社員" />
+          <NavButton icon={FileText} active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} label="報告" />
           <div className="h-px w-8 bg-gray-800"></div>
           <NavButton icon={UploadCloud} active={activeTab === 'import'} onClick={() => setActiveTab('import')} label="Sync" />
           <NavButton icon={Settings} active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} label="Config" />
@@ -504,6 +432,20 @@ export default function App() {
 
         {/* MAIN */}
         <main className="flex-1 p-6 md:p-10 max-w-7xl mx-auto min-h-[calc(100vh-80px)] mb-20 md:mb-0">
+
+          {/* GLOBAL SEARCH BANNER */}
+          {searchTerm && (
+            <div className="mb-6 bg-blue-900/20 border border-blue-500/20 rounded-xl p-4 flex flex-wrap items-center gap-3 animate-in fade-in duration-300">
+              <Search className="w-4 h-4 text-blue-400 shrink-0" />
+              <span className="text-sm text-blue-300 font-bold">"{searchTerm}"</span>
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={() => setActiveTab('properties')} className={`text-xs px-3 py-1.5 rounded-lg border transition font-bold ${activeTab === 'properties' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-black/40 border-white/10 text-gray-400 hover:text-white'}`}><Building className="w-3 h-3 inline mr-1" />{filteredProperties.length} propiedades</button>
+                <button onClick={() => setActiveTab('employees')} className={`text-xs px-3 py-1.5 rounded-lg border transition font-bold ${activeTab === 'employees' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-black/40 border-white/10 text-gray-400 hover:text-white'}`}><Users className="w-3 h-3 inline mr-1" />{filteredEmployees.length} empleados</button>
+                {filteredTenants.length > 0 && <span className="text-xs px-3 py-1.5 rounded-lg border bg-black/40 border-white/10 text-gray-400 font-bold"><User className="w-3 h-3 inline mr-1" />{filteredTenants.length} inquilinos</span>}
+              </div>
+              <button onClick={() => setSearchTerm('')} className="ml-auto text-gray-500 hover:text-white transition"><X className="w-4 h-4" /></button>
+            </div>
+          )}
 
           {/* ====== DASHBOARD ====== */}
           {activeTab === 'dashboard' && (
@@ -554,11 +496,11 @@ export default function App() {
                       {uniqueCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   )}
-                  <button onClick={() => { setPropertyForm({ id: null, name: '', room_number: '', postal_code: '', address_auto: '', address_detail: '', manager_name: '', manager_phone: '', contract_start: new Date().toISOString().split('T')[0], contract_end: '', type: '1K', capacity: 2, rent_cost: 0, rent_price_uns: 0, parking_cost: 0, kanri_hi: 0, billing_mode: 'fixed' }); setIsPropertyModalOpen(true); }} className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"><PlusCircle className="w-4 h-4"/> Nueva Propiedad</button>
+                  <button onClick={() => { const f = { id: null, name: '', room_number: '', postal_code: '', address_auto: '', address_detail: '', manager_name: '', manager_phone: '', contract_start: new Date().toISOString().split('T')[0], contract_end: '', type: '1K', capacity: 2, rent_cost: 0, rent_price_uns: 0, parking_cost: 0, kanri_hi: 0, billing_mode: 'fixed' as const }; setPropertyForm(f); propertyFormSnapshot.current = JSON.stringify(f); setIsPropertyModalOpen(true); }} className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"><PlusCircle className="w-4 h-4"/> Nueva Propiedad</button>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {(propertyViewMode === 'active' ? filteredProperties.filter(p => !p.contract_end || new Date(p.contract_end) > new Date()) : filteredProperties.filter(p => p.contract_end && new Date(p.contract_end) <= new Date())).map(p => {
+                {(propertyViewMode === 'active' ? filteredProperties.filter(isPropertyActive) : filteredProperties.filter(p => !isPropertyActive(p))).map(p => {
                   const ts = db.tenants.filter(t => t.property_id === p.id && t.status === 'active');
                   const totalIn = ts.reduce((s, t) => s + (t.rent_contribution || 0) + (t.parking_fee || 0), 0);
                   const vac = (p.capacity || 0) - ts.length;
@@ -586,13 +528,14 @@ export default function App() {
                         <div className="space-y-1 opacity-60 hover:opacity-100 transition-opacity mb-3"><p className="text-gray-400 text-[10px] flex gap-1 truncate items-center"><MapPin className="w-3 h-3 text-gray-600"/> {p.address}</p></div>
                       </div>
                       <div className="flex gap-2 mt-auto">
-                        <button onClick={() => { setPropertyForm({ ...p, kanri_hi: p.kanri_hi || 0, billing_mode: p.billing_mode || 'fixed' }); setIsPropertyModalOpen(true); }} className="bg-black/40 hover:bg-black/60 text-gray-300 p-2.5 rounded-lg border border-white/10 transition"><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={() => { const f = { ...p, kanri_hi: p.kanri_hi || 0, billing_mode: p.billing_mode || 'fixed' }; setPropertyForm(f); propertyFormSnapshot.current = JSON.stringify(f); setIsPropertyModalOpen(true); }} className="bg-black/40 hover:bg-black/60 text-gray-300 p-2.5 rounded-lg border border-white/10 transition"><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={() => handleDeleteProperty(p.id)} className="bg-black/40 hover:bg-red-900/40 text-gray-500 hover:text-red-400 p-2.5 rounded-lg border border-white/10 hover:border-red-500/30 transition" title="Eliminar propiedad"><Trash2 className="w-4 h-4"/></button>
                         {propertyViewMode === 'active' && <button onClick={() => openRentManager(p)} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase tracking-wider py-2.5 rounded-lg shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 transition"><DollarSign className="w-4 h-4" /> Gestión</button>}
                       </div>
                     </GlassCard>
                   );
                 })}
-                {(propertyViewMode === 'active' ? filteredProperties.filter(p => !p.contract_end || new Date(p.contract_end) > new Date()) : filteredProperties.filter(p => p.contract_end && new Date(p.contract_end) <= new Date())).length === 0 && (
+                {(propertyViewMode === 'active' ? filteredProperties.filter(isPropertyActive) : filteredProperties.filter(p => !isPropertyActive(p))).length === 0 && (
                   <div className="col-span-full flex flex-col items-center justify-center py-16 text-center">
                     <Building className="w-12 h-12 text-gray-700 mb-4" />
                     <p className="text-gray-500 text-sm font-bold">{companyFilter ? `Sin propiedades para 派遣先: ${companyFilter}` : searchTerm ? 'Sin resultados para la búsqueda' : propertyViewMode === 'history' ? 'Sin propiedades en historial' : 'Sin propiedades registradas'}</p>
@@ -633,6 +576,7 @@ export default function App() {
                           <th className="text-left p-4 text-[10px] text-gray-500 uppercase font-bold hidden md:table-cell">カナ</th>
                           <th className="text-left p-4 text-[10px] text-gray-500 uppercase font-bold hidden md:table-cell">派遣先</th>
                           <th className="text-left p-4 text-[10px] text-gray-500 uppercase font-bold">Estado</th>
+                          <th className="text-right p-4 text-[10px] text-gray-500 uppercase font-bold">Acciones</th>
                         </tr></thead>
                         <tbody>
                           {filteredEmployees.slice((empPage - 1) * EMP_PER_PAGE, empPage * EMP_PER_PAGE).map(emp => {
@@ -645,6 +589,12 @@ export default function App() {
                                 <td className="p-4 text-gray-400 hidden md:table-cell">{emp.name_kana}</td>
                                 <td className="p-4 text-gray-400 hidden md:table-cell">{emp.company}</td>
                                 <td className="p-4">{isAssigned ? <span className="text-[10px] bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-1 rounded font-bold flex items-center gap-1 w-fit"><Building className="w-3 h-3"/>{assignedProp?.name}</span> : <span className="text-[10px] text-gray-500">Disponible</span>}</td>
+                                <td className="p-4 text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <button onClick={() => { const e = { ...emp }; setEditingEmployee(e); employeeSnapshot.current = JSON.stringify(e); }} className="text-gray-600 hover:text-blue-400 p-1.5 rounded transition" title="Editar"><Edit2 className="w-3.5 h-3.5"/></button>
+                                    <button onClick={() => handleDeleteEmployee(emp.id)} className="text-gray-600 hover:text-red-400 p-1.5 rounded transition" title="Eliminar"><Trash2 className="w-3.5 h-3.5"/></button>
+                                  </div>
+                                </td>
                               </tr>
                             );
                           })}
@@ -667,11 +617,14 @@ export default function App() {
             </div>
           )}
 
+          {/* ====== REPORTES ====== */}
+          {activeTab === 'reports' && <ReportsView db={db} cycle={cycle} onUpdateTenant={(tid, field, val) => { const v = parseInt(val) || 0; setDb(prev => ({ ...prev, tenants: prev.tenants.map(t => t.id === tid ? { ...t, [field]: v } : t) })); }} onRemoveTenant={(tid) => { const tenant = db.tenants.find(t => t.id === tid); if (!tenant) return; const fee = db.config.defaultCleaningFee || 30000; if (!window.confirm(`¿Dar de baja a ${tenant.name}?\n\nクリーニング費: ¥${fee.toLocaleString()}`)) return; setDb(prev => { const updated = { ...prev, tenants: prev.tenants.map(t => t.id === tid ? { ...t, status: 'inactive' as const, exit_date: new Date().toISOString().split('T')[0], cleaning_fee: fee } : t) }; return autoSplitRent(updated, tenant.property_id); }); }} onAddTenant={(tenantData) => { if (db.tenants.find(t => t.employee_id === tenantData.employee_id && t.status === 'active')) { alert('Este 社員No ya está asignado.'); return; } const newT: Tenant = { ...tenantData, id: generateId(), status: 'active' }; setDb(prev => { const updated = { ...prev, tenants: [...prev.tenants, newT] }; return autoSplitRent(updated, tenantData.property_id); }); }} onDeleteTenant={(tid) => { if (!window.confirm('¿Eliminar registro permanentemente?')) return; setDb(prev => ({ ...prev, tenants: prev.tenants.filter(t => t.id !== tid) })); }} />}
+
           {/* ====== IMPORT ====== */}
-          {activeTab === 'import' && <ImportViewComponent isDragging={isDragging} importStatus={importStatus} previewSummary={previewSummary} onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }} onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }} onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length) processExcelFile(e.dataTransfer.files[0]); }} onFileChange={(e) => e.target.files?.length && processExcelFile(e.target.files[0])} onSave={saveToDatabase} />}
+          {activeTab === 'import' && <ImportView isDragging={isDragging} importStatus={importStatus} previewSummary={previewSummary} onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }} onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }} onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length) processExcelFile(e.dataTransfer.files[0]); }} onFileChange={(e) => e.target.files?.length && processExcelFile(e.target.files[0])} onSave={saveToDatabase} />}
 
           {/* ====== SETTINGS ====== */}
-          {activeTab === 'settings' && <SettingsView db={db} setDb={setDb} onDownloadBackup={downloadBackup} onRestoreBackup={restoreBackup} onReset={() => { if (window.confirm('¿Borrar todo?')) setDb(INITIAL_DB); }} />}
+          {activeTab === 'settings' && <SettingsView db={db} setDb={setDb} onDownloadBackup={downloadBackup} onRestoreBackup={restoreBackup} onReset={() => { if (window.confirm('¿Borrar todo?')) resetDb(); }} />}
         </main>
       </div>
 
@@ -679,8 +632,8 @@ export default function App() {
       <nav className="md:hidden fixed bottom-0 left-0 w-full bg-[#0d0f12]/95 backdrop-blur-lg border-t border-white/10 flex justify-around items-center h-20 z-50 px-2 pb-2 safe-area-bottom">
         <NavButtonMobile icon={LayoutDashboard} active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} label="HQ" />
         <NavButtonMobile icon={Building} active={activeTab === 'properties'} onClick={() => setActiveTab('properties')} label="Prop." />
-        <div className="relative -top-5"><button onClick={() => setActiveTab('import')} className="bg-blue-600 text-white p-4 rounded-full shadow-lg shadow-blue-500/30 border-4 border-[#0d0f12]"><UploadCloud className="w-6 h-6" /></button></div>
         <NavButtonMobile icon={Users} active={activeTab === 'employees'} onClick={() => setActiveTab('employees')} label="社員" />
+        <NavButtonMobile icon={FileText} active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} label="報告" />
         <NavButtonMobile icon={Settings} active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} label="Config" />
       </nav>
 
@@ -716,7 +669,7 @@ export default function App() {
               {/* ACTIONS */}
               <div className="flex gap-3">
                 {mode === 'split' && <button onClick={distributeRentEvenly} className="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20 transition"><Calculator className="w-4 h-4"/> Aplicar División</button>}
-                <button onClick={() => { setTenantForm({ employee_id: '', name: '', name_kana: '', company: '', property_id: prop.id, rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0] }); setIsAddTenantModalOpen(true); }} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition"><UserPlus className="w-4 h-4"/> Registrar Inquilino</button>
+                <button onClick={() => { const f = { employee_id: '', name: '', name_kana: '', company: '', property_id: prop.id, rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0] }; setTenantForm(f); tenantFormSnapshot.current = JSON.stringify(f); setIsAddTenantModalOpen(true); }} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition"><UserPlus className="w-4 h-4"/> Registrar Inquilino</button>
               </div>
 
               {/* TENANT TABLE - ACTIVE */}
@@ -767,11 +720,12 @@ export default function App() {
                       <div className="col-span-2 text-center">入居</div>
                       <div className="col-span-2 text-center">退去</div>
                       <div className="col-span-2 text-right">最終家賃</div>
-                      <div className="col-span-3 text-right">クリーニング費</div>
+                      <div className="col-span-2 text-right">クリーニング費</div>
+                      <div className="col-span-1"></div>
                     </div>
                     <div className="p-2 space-y-1">
                       {inactiveTenants.map(t => (
-                        <div key={t.id} className="grid grid-cols-12 items-center p-3 rounded-xl bg-black/20 border border-white/5 opacity-70">
+                        <div key={t.id} className="grid grid-cols-12 items-center p-3 rounded-xl bg-black/20 border border-white/5 opacity-70 hover:opacity-100 transition-opacity">
                           <div className="col-span-3">
                             <div className="text-gray-400 text-sm font-bold truncate">{t.name}</div>
                             <div className="text-[10px] text-gray-600 font-mono">{t.employee_id}</div>
@@ -785,9 +739,11 @@ export default function App() {
                           <div className="col-span-2 text-right">
                             <div className="text-[10px] text-gray-500 font-mono">¥{(t.rent_contribution || 0).toLocaleString()}</div>
                           </div>
-                          <div className="col-span-3 text-right">
+                          <div className="col-span-2 text-right">
                             <div className="text-[10px] text-red-400 font-mono font-bold">¥{(t.cleaning_fee || 0).toLocaleString()}</div>
-                            <div className="text-[9px] text-gray-600">limpieza</div>
+                          </div>
+                          <div className="col-span-1 text-right">
+                            <button onClick={() => reactivateTenant(t.id)} className="text-gray-600 hover:text-green-400 transition p-1" title="Reactivar inquilino"><UserPlus className="w-3.5 h-3.5"/></button>
                           </div>
                         </div>
                       ))}
@@ -801,7 +757,7 @@ export default function App() {
       </Modal>
 
       {/* ====== MODAL: PROPERTY FORM ====== */}
-      <Modal isOpen={isPropertyModalOpen} onClose={() => { setPropertyForm({...EMPTY_PROPERTY_FORM}); setIsPropertyModalOpen(false); }} title={propertyForm.id ? "Editar Propiedad" : "Nueva Propiedad"}>
+      <Modal isOpen={isPropertyModalOpen} onClose={() => { if (!confirmDiscardChanges(JSON.stringify(propertyForm), propertyFormSnapshot.current)) return; setPropertyForm({...EMPTY_PROPERTY_FORM}); setIsPropertyModalOpen(false); }} title={propertyForm.id ? "Editar Propiedad" : "Nueva Propiedad"}>
         <form onSubmit={handleSaveProperty} className="space-y-6">
           <div className="grid grid-cols-2 gap-5">
             <div><label className="text-xs text-gray-400 font-bold block mb-1.5 ml-1">Nombre Edificio</label><input className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white focus:border-blue-500 outline-none transition" value={propertyForm.name} onChange={e => setPropertyForm({ ...propertyForm, name: e.target.value })} placeholder="Ej: Legend K" required /></div>
@@ -825,10 +781,10 @@ export default function App() {
             <div className="col-span-2 bg-gray-800/30 p-5 rounded-2xl border border-white/5">
               <h4 className="text-green-400 text-xs font-bold mb-4 uppercase flex items-center gap-2"><DollarSign className="w-3 h-3" /> Estructura de Costos (不動産屋に払う)</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div><label className="text-[10px] text-gray-500 block mb-1">家賃 (Renta)</label><input type="number" min="0" step="1000" className="w-full bg-black border border-gray-700 p-2.5 rounded-lg text-white font-mono focus:border-green-500 outline-none" value={propertyForm.rent_cost} onChange={e => setPropertyForm({ ...propertyForm, rent_cost: e.target.value })} /></div>
-                <div><label className="text-[10px] text-gray-500 block mb-1">管理費</label><input type="number" min="0" step="500" className="w-full bg-black border border-gray-700 p-2.5 rounded-lg text-white font-mono focus:border-green-500 outline-none" value={propertyForm.kanri_hi} onChange={e => setPropertyForm({ ...propertyForm, kanri_hi: e.target.value })} /></div>
-                <div><label className="text-[10px] text-blue-400 block mb-1">駐車場代</label><input type="number" min="0" step="500" className="w-full bg-black border border-blue-900/30 p-2.5 rounded-lg text-blue-200 font-mono focus:border-blue-500 outline-none" value={propertyForm.parking_cost} onChange={e => setPropertyForm({ ...propertyForm, parking_cost: e.target.value })} /></div>
-                <div><label className="text-[10px] text-yellow-500 block mb-1 font-bold">Precio UNS</label><input type="number" min="0" step="1000" className="w-full bg-black border border-yellow-900/30 p-2.5 rounded-lg text-yellow-400 font-mono font-bold focus:border-yellow-500 outline-none" value={propertyForm.rent_price_uns} onChange={e => setPropertyForm({ ...propertyForm, rent_price_uns: e.target.value })} /></div>
+                <div><label className="text-[10px] text-gray-500 block mb-1">家賃 (Renta)</label><input type="number" min="0" step="1000" className="w-full bg-black border border-gray-700 p-2.5 rounded-lg text-white font-mono focus:border-green-500 outline-none" value={propertyForm.rent_cost} onChange={e => setPropertyForm({ ...propertyForm, rent_cost: Number(e.target.value) || 0 })} /></div>
+                <div><label className="text-[10px] text-gray-500 block mb-1">管理費</label><input type="number" min="0" step="500" className="w-full bg-black border border-gray-700 p-2.5 rounded-lg text-white font-mono focus:border-green-500 outline-none" value={propertyForm.kanri_hi} onChange={e => setPropertyForm({ ...propertyForm, kanri_hi: Number(e.target.value) || 0 })} /></div>
+                <div><label className="text-[10px] text-blue-400 block mb-1">駐車場代</label><input type="number" min="0" step="500" className="w-full bg-black border border-blue-900/30 p-2.5 rounded-lg text-blue-200 font-mono focus:border-blue-500 outline-none" value={propertyForm.parking_cost} onChange={e => setPropertyForm({ ...propertyForm, parking_cost: Number(e.target.value) || 0 })} /></div>
+                <div><label className="text-[10px] text-yellow-500 block mb-1 font-bold">Precio UNS</label><input type="number" min="0" step="1000" className="w-full bg-black border border-yellow-900/30 p-2.5 rounded-lg text-yellow-400 font-mono font-bold focus:border-yellow-500 outline-none" value={propertyForm.rent_price_uns} onChange={e => setPropertyForm({ ...propertyForm, rent_price_uns: Number(e.target.value) || 0 })} /></div>
               </div>
             </div>
 
@@ -842,7 +798,7 @@ export default function App() {
             </div>
 
             <div><label className="text-xs text-gray-400 block mb-1 ml-1">Tipo</label><input className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white outline-none" value={propertyForm.type} onChange={e => setPropertyForm({ ...propertyForm, type: e.target.value })} /></div>
-            <div><label className="text-xs text-gray-400 block mb-1 ml-1">Capacidad</label><input type="number" min="1" max="20" className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white outline-none" value={propertyForm.capacity} onChange={e => setPropertyForm({ ...propertyForm, capacity: e.target.value })} /></div>
+            <div><label className="text-xs text-gray-400 block mb-1 ml-1">Capacidad</label><input type="number" min="1" max="20" className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white outline-none" value={propertyForm.capacity} onChange={e => setPropertyForm({ ...propertyForm, capacity: Number(e.target.value) || 1 })} /></div>
           </div>
           <div className="border-t border-gray-800 pt-6 grid grid-cols-2 gap-5">
             <div><label className="text-xs text-gray-400 block mb-1">Admin</label><input className="w-full bg-black/50 border border-gray-700 p-2.5 rounded-lg text-white" value={propertyForm.manager_name} onChange={e => setPropertyForm({ ...propertyForm, manager_name: e.target.value })} /></div>
@@ -851,14 +807,14 @@ export default function App() {
             <div><label className="text-xs text-gray-400 block mb-1">Fin Contrato</label><input type="date" className="w-full bg-black/50 border border-gray-700 p-2.5 rounded-lg text-white" value={propertyForm.contract_end} onChange={e => setPropertyForm({ ...propertyForm, contract_end: e.target.value })} /></div>
           </div>
           <div className="flex gap-4 pt-4">
-            <button type="button" onClick={() => { setPropertyForm({...EMPTY_PROPERTY_FORM}); setIsPropertyModalOpen(false); }} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-4 rounded-xl hover:bg-white/5 transition">Cancelar</button>
+            <button type="button" onClick={() => { if (!confirmDiscardChanges(JSON.stringify(propertyForm), propertyFormSnapshot.current)) return; setPropertyForm({...EMPTY_PROPERTY_FORM}); setIsPropertyModalOpen(false); }} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-4 rounded-xl hover:bg-white/5 transition">Cancelar</button>
             <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-500/20 transition hover:-translate-y-1">Guardar</button>
           </div>
         </form>
       </Modal>
 
       {/* ====== MODAL: ADD TENANT ====== */}
-      <Modal isOpen={isAddTenantModalOpen} onClose={() => { setTenantForm({...EMPTY_TENANT_FORM}); setIsIdFound(false); setIsAddTenantModalOpen(false); }} title="Registrar Inquilino">
+      <Modal isOpen={isAddTenantModalOpen} onClose={() => { if (!confirmDiscardChanges(JSON.stringify(tenantForm), tenantFormSnapshot.current)) return; setTenantForm({...EMPTY_TENANT_FORM}); setIsIdFound(false); setIsAddTenantModalOpen(false); }} title="Registrar Inquilino">
         <form onSubmit={handleAddTenant} className="space-y-6">
           <div className="bg-gray-800/50 p-6 rounded-2xl border border-white/5">
             <label className="text-xs text-blue-500 font-bold block mb-2 uppercase tracking-wide">Paso 1: 社員No (ID Empleado)</label>
@@ -894,8 +850,8 @@ export default function App() {
           <div className="bg-gray-800/50 p-6 rounded-2xl border border-white/5">
             <label className="text-xs text-blue-500 font-bold block mb-4 uppercase tracking-wide">Paso 3: Precio Mensual</label>
             <div className="grid grid-cols-2 gap-6">
-              <div><label className="text-xs text-gray-400 block mb-1">Renta (¥/月)</label><input type="number" min="0" step="1000" className="w-full bg-black border border-gray-700 p-3 rounded-xl text-white font-mono text-lg focus:border-blue-500 outline-none" value={tenantForm.rent_contribution} onChange={e => setTenantForm({ ...tenantForm, rent_contribution: e.target.value })} /></div>
-              <div><label className="text-xs text-blue-400 block mb-1">Parking (¥/月)</label><input type="number" min="0" step="500" className="w-full bg-black border border-blue-900/50 p-3 rounded-xl text-blue-200 font-mono text-lg focus:border-blue-500 outline-none" value={tenantForm.parking_fee} onChange={e => setTenantForm({ ...tenantForm, parking_fee: e.target.value })} /></div>
+              <div><label className="text-xs text-gray-400 block mb-1">Renta (¥/月)</label><input type="number" min="0" step="1000" className="w-full bg-black border border-gray-700 p-3 rounded-xl text-white font-mono text-lg focus:border-blue-500 outline-none" value={tenantForm.rent_contribution} onChange={e => setTenantForm({ ...tenantForm, rent_contribution: Number(e.target.value) || 0 })} /></div>
+              <div><label className="text-xs text-blue-400 block mb-1">Parking (¥/月)</label><input type="number" min="0" step="500" className="w-full bg-black border border-blue-900/50 p-3 rounded-xl text-blue-200 font-mono text-lg focus:border-blue-500 outline-none" value={tenantForm.parking_fee} onChange={e => setTenantForm({ ...tenantForm, parking_fee: Number(e.target.value) || 0 })} /></div>
             </div>
             {tenantForm.entry_date && parseInt(tenantForm.rent_contribution) > 0 && (() => {
               const pr = calculateProRata(parseInt(tenantForm.rent_contribution), tenantForm.entry_date);
@@ -905,10 +861,28 @@ export default function App() {
           </div>
 
           <div className="flex gap-4 pt-2">
-            <button type="button" onClick={() => { setTenantForm({...EMPTY_TENANT_FORM}); setIsIdFound(false); setIsAddTenantModalOpen(false); }} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-4 rounded-xl hover:bg-white/5 transition">Cancelar</button>
+            <button type="button" onClick={() => { if (!confirmDiscardChanges(JSON.stringify(tenantForm), tenantFormSnapshot.current)) return; setTenantForm({...EMPTY_TENANT_FORM}); setIsIdFound(false); setIsAddTenantModalOpen(false); }} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-4 rounded-xl hover:bg-white/5 transition">Cancelar</button>
             <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg hover:shadow-blue-500/20 transition hover:-translate-y-1">Confirmar</button>
           </div>
         </form>
+      </Modal>
+
+      {/* ====== MODAL: EDIT EMPLOYEE ====== */}
+      <Modal isOpen={!!editingEmployee} onClose={() => { if (editingEmployee && !confirmDiscardChanges(JSON.stringify(editingEmployee), employeeSnapshot.current)) return; setEditingEmployee(null); }} title="Editar Empleado">
+        {editingEmployee && (
+          <div className="space-y-4">
+            <div><label className="text-xs text-gray-400 font-bold block mb-1">社員No (ID)</label><input className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-blue-400 font-mono" value={editingEmployee.id} disabled /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="text-xs text-gray-400 block mb-1">氏名 (Nombre)</label><input className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white focus:border-blue-500 outline-none" value={editingEmployee.name} onChange={e => setEditingEmployee({ ...editingEmployee, name: e.target.value })} /></div>
+              <div><label className="text-xs text-gray-400 block mb-1">カナ</label><input className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white focus:border-blue-500 outline-none" value={editingEmployee.name_kana} onChange={e => setEditingEmployee({ ...editingEmployee, name_kana: e.target.value })} /></div>
+            </div>
+            <div><label className="text-xs text-gray-400 block mb-1">派遣先 (Empresa)</label><input className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white focus:border-blue-500 outline-none" value={editingEmployee.company} onChange={e => setEditingEmployee({ ...editingEmployee, company: e.target.value })} /></div>
+            <div className="flex gap-4 pt-4">
+              <button onClick={() => { if (editingEmployee && !confirmDiscardChanges(JSON.stringify(editingEmployee), employeeSnapshot.current)) return; setEditingEmployee(null); }} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-3 rounded-xl hover:bg-white/5 transition">Cancelar</button>
+              <button onClick={handleSaveEmployee} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-500/20 transition">Guardar</button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
