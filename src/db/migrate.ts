@@ -38,6 +38,8 @@ export async function migrateFromLocalStorage(): Promise<boolean> {
         !parsed.tenants || !Array.isArray(parsed.tenants) ||
         !parsed.employees || !Array.isArray(parsed.employees)) {
       console.warn('[Migración] Datos de localStorage corruptos, saltando migración');
+      // Marcar como migrado para evitar retry loop infinito
+      await unsDB.meta.put({ key: 'dbmeta', version: '8.0', last_sync: new Date().toISOString(), migrated_from_localstorage: true });
       return false;
     }
 

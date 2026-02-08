@@ -175,7 +175,7 @@ export function useReportExport() {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>${title}</title>
+        <title>${title.replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c] || c))}</title>
         <style>
           @page { size: landscape; margin: 10mm; }
           body { font-family: 'Segoe UI', 'Meiryo', sans-serif; font-size: 11px; color: #333; margin: 0; padding: 20px; }
@@ -193,7 +193,7 @@ export function useReportExport() {
         </style>
       </head>
       <body>
-        <h1>UNS Estate OS — ${title}</h1>
+        <h1>UNS Estate OS — ${title.replace(/[<>&"']/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c] || c))}</h1>
         <div class="subtitle">Generado: ${new Date().toLocaleDateString('ja-JP')} ${new Date().toLocaleTimeString('ja-JP')}</div>
         ${tableEl.outerHTML}
         <div class="footer">ユニバーサル企画株式会社</div>

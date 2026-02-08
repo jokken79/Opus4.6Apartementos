@@ -9,16 +9,19 @@ import {
 import { ReportsView } from './components/reports/ReportsView';
 import { useIndexedDB } from './hooks/useIndexedDB';
 import type { Property, Tenant, Employee, AppConfig, AppDatabase, AlertItem } from './types/database';
+import { validateBackup } from './utils/validators';
 
 // --- SheetJS ---
+let sheetJSReady = false;
 const useLoadSheetJS = () => {
   useEffect(() => {
-    if (!(window as any).XLSX) {
-      const script = document.createElement('script');
-      script.src = "https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js";
-      script.async = true;
-      document.body.appendChild(script);
-    }
+    if ((window as any).XLSX) { sheetJSReady = true; return; }
+    const script = document.createElement('script');
+    script.src = "https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js";
+    script.async = true;
+    script.onload = () => { sheetJSReady = true; };
+    script.onerror = () => { console.error('[SheetJS] Error cargando CDN'); };
+    document.body.appendChild(script);
   }, []);
 };
 
@@ -300,7 +303,23 @@ export default function App() {
   const downloadBackup = () => { const a = document.createElement('a'); a.href = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db)); a.download = `UNS_Backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); };
   const restoreBackup = (event: React.ChangeEvent<HTMLInputElement>) => {
     const f = event.target.files?.[0]; if (!f) return;
-    const r = new FileReader(); r.onload = (e) => { try { const d = JSON.parse(e.target?.result as string); if (d.properties) { setDb(d); alert('Restaurado!'); } else alert('Archivo inválido.'); } catch { alert('Error de lectura.'); } }; r.readAsText(f);
+    const r = new FileReader();
+    r.onload = (e) => {
+      try {
+        const d = JSON.parse(e.target?.result as string);
+        const v = validateBackup(d);
+        if (!v.success) { alert('Archivo inválido: ' + v.errors.map(e => e.message).join(', ')); return; }
+        setDb({
+          properties: d.properties || [],
+          tenants: d.tenants || [],
+          employees: d.employees || [],
+          config: { companyName: d.config?.companyName || 'UNS-KIKAKU', closingDay: d.config?.closingDay ?? 0, defaultCleaningFee: d.config?.defaultCleaningFee ?? 30000 },
+        });
+        alert('Restaurado!');
+      } catch { alert('Error de lectura.'); }
+    };
+    r.onerror = () => { alert('Error al leer archivo.'); };
+    r.readAsText(f);
   };
 
   // --- EMPLOYEE LOOKUP ---
@@ -408,6 +427,7 @@ export default function App() {
     reader.onload = (e) => {
       try {
         const X = (window as any).XLSX;
+        if (!X) { setImportStatus({ type: 'error', msg: 'SheetJS aún no terminó de cargar. Espere e intente de nuevo.' }); return; }
         const wb = X.read(new Uint8Array(e.target?.result as ArrayBuffer), { type: 'array' });
         const sn: string[] = wb.SheetNames;
         let emp = sn.find((n: string) => n.includes('Genzai') || n.includes('Ukeoi') || n.includes('台帳'));
