@@ -31,7 +31,7 @@ interface Property {
 }
 interface Tenant {
   id: number; employee_id: string; name: string; name_kana: string;
-  property_id: number; rent_contribution: number; parking_fee: number;
+  company?: string; property_id: number; rent_contribution: number; parking_fee: number;
   entry_date?: string; exit_date?: string; cleaning_fee?: number; status: 'active' | 'inactive';
 }
 interface Employee { id: string; name: string; name_kana: string; company: string; full_data: any; }
@@ -258,6 +258,7 @@ export default function App() {
   const [selectedPropertyForRent, setSelectedPropertyForRent] = useState<Property | null>(null);
   const [isIdFound, setIsIdFound] = useState(false);
   const [propertyViewMode, setPropertyViewMode] = useState('active');
+  const [companyFilter, setCompanyFilter] = useState('');
   const [empSearch, setEmpSearch] = useState('');
 
   const [tenantForm, setTenantForm] = useState<any>({
@@ -310,7 +311,7 @@ export default function App() {
   useEffect(() => {
     if (tenantForm.employee_id.length > 2) {
       const f = db.employees.find(e => String(e.id) === String(tenantForm.employee_id));
-      if (f) { setTenantForm((p: any) => ({ ...p, name: f.name, name_kana: f.name_kana || '' })); setIsIdFound(true); }
+      if (f) { setTenantForm((p: any) => ({ ...p, name: f.name, name_kana: f.name_kana || '', company: f.company || '' })); setIsIdFound(true); }
       else setIsIdFound(false);
     } else setIsIdFound(false);
   }, [tenantForm.employee_id, db.employees]);
@@ -324,10 +325,22 @@ export default function App() {
     catch { setAddressSearchError('Error de conexión.'); } finally { setIsSearchingAddress(false); }
   };
 
+  const uniqueCompanies = useMemo(() => {
+    const companies = new Set<string>();
+    db.tenants.filter(t => t.status === 'active' && t.company).forEach(t => companies.add(t.company!));
+    return Array.from(companies).sort();
+  }, [db.tenants]);
+
   const filteredProperties = useMemo(() => {
-    const t = searchTerm.toLowerCase(); if (!t) return db.properties;
-    return db.properties.filter(p => p.name.toLowerCase().includes(t) || (p.room_number && p.room_number.includes(t)) || p.address.toLowerCase().includes(t));
-  }, [db.properties, searchTerm]);
+    let result = db.properties;
+    const t = searchTerm.toLowerCase();
+    if (t) result = result.filter(p => p.name.toLowerCase().includes(t) || (p.room_number && p.room_number.includes(t)) || p.address.toLowerCase().includes(t));
+    if (companyFilter) {
+      const propIdsWithCompany = new Set(db.tenants.filter(t => t.status === 'active' && t.company === companyFilter).map(t => t.property_id));
+      result = result.filter(p => propIdsWithCompany.has(p.id));
+    }
+    return result;
+  }, [db.properties, db.tenants, searchTerm, companyFilter]);
 
   const filteredEmployees = useMemo(() => {
     const t = empSearch.toLowerCase(); if (!t) return db.employees;
@@ -372,7 +385,7 @@ export default function App() {
     const newT: Tenant = { id: Date.now(), ...tenantForm, property_id: parseInt(tenantForm.property_id), rent_contribution: parseInt(tenantForm.rent_contribution) || 0, parking_fee: parseInt(tenantForm.parking_fee) || 0, status: 'active' };
     setDb(prev => ({ ...prev, tenants: [...prev.tenants, newT] }));
     setIsAddTenantModalOpen(false);
-    setTenantForm({ employee_id: '', name: '', name_kana: '', property_id: '', rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0] });
+    setTenantForm({ employee_id: '', name: '', name_kana: '', company: '', property_id: '', rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0] });
   };
 
   const removeTenant = (tid: number) => {
@@ -501,7 +514,15 @@ export default function App() {
                   <button onClick={() => setPropertyViewMode('active')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${propertyViewMode === 'active' ? 'bg-[#20242c] text-white shadow-lg border border-white/10' : 'text-gray-500 hover:text-white'}`}><Building className="w-4 h-4"/> Activos</button>
                   <button onClick={() => setPropertyViewMode('history')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${propertyViewMode === 'history' ? 'bg-[#20242c] text-white shadow-lg border border-white/10' : 'text-gray-500 hover:text-white'}`}><History className="w-4 h-4"/> Historial</button>
                 </div>
-                <button onClick={() => { setPropertyForm({ id: null, name: '', room_number: '', postal_code: '', address_auto: '', address_detail: '', manager_name: '', manager_phone: '', contract_start: new Date().toISOString().split('T')[0], contract_end: '', type: '1K', capacity: 2, rent_cost: 0, rent_price_uns: 0, parking_cost: 0, kanri_hi: 0, billing_mode: 'fixed' }); setIsPropertyModalOpen(true); }} className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"><PlusCircle className="w-4 h-4"/> Nueva Propiedad</button>
+                <div className="flex gap-2 w-full md:w-auto">
+                  {uniqueCompanies.length > 0 && (
+                    <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} className="bg-black/60 border border-white/10 text-sm text-white rounded-xl px-3 py-2.5 outline-none focus:border-cyan-500 transition appearance-none cursor-pointer">
+                      <option value="">全派遣先 (Todas)</option>
+                      {uniqueCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  )}
+                  <button onClick={() => { setPropertyForm({ id: null, name: '', room_number: '', postal_code: '', address_auto: '', address_detail: '', manager_name: '', manager_phone: '', contract_start: new Date().toISOString().split('T')[0], contract_end: '', type: '1K', capacity: 2, rent_cost: 0, rent_price_uns: 0, parking_cost: 0, kanri_hi: 0, billing_mode: 'fixed' }); setIsPropertyModalOpen(true); }} className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"><PlusCircle className="w-4 h-4"/> Nueva Propiedad</button>
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {(propertyViewMode === 'active' ? filteredProperties.filter(p => !p.contract_end || new Date(p.contract_end) > new Date()) : filteredProperties.filter(p => p.contract_end && new Date(p.contract_end) <= new Date())).map(p => {
@@ -527,7 +548,7 @@ export default function App() {
                           <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-gray-500">Objetivo UNS</span><span className="text-blue-500 font-mono font-bold">¥{(p.rent_price_uns || 0).toLocaleString()}</span></div>
                           <div className="flex justify-between pt-1"><span className="text-gray-400 font-bold uppercase">Recaudado</span><span className={`text-lg font-black font-mono ${totalIn >= (p.rent_price_uns || 0) ? 'text-green-400' : 'text-orange-400'}`}>¥{totalIn.toLocaleString()}</span></div>
                         </div>
-                        {ts.length > 0 && <div className="mb-3 space-y-1">{ts.map(t => (<div key={t.id} className="flex items-center gap-2 text-[10px] text-gray-400"><User className="w-3 h-3 text-blue-500"/><span className="truncate">{t.name}</span><span className="text-gray-600 font-mono ml-auto">¥{t.rent_contribution.toLocaleString()}</span></div>))}</div>}
+                        {ts.length > 0 && <div className="mb-3 space-y-1.5">{ts.map(t => (<div key={t.id} className="flex items-center gap-2 text-[10px] text-gray-400"><User className="w-3 h-3 text-blue-500 shrink-0"/><div className="flex flex-col min-w-0 flex-1"><span className="truncate text-gray-300">{t.name}</span>{t.company && <span className="truncate text-[9px] text-cyan-500/70">派遣先: {t.company}</span>}</div><span className="text-gray-600 font-mono shrink-0">¥{t.rent_contribution.toLocaleString()}</span></div>))}</div>}
                         {(() => { const past = db.tenants.filter(t => t.property_id === p.id && t.status === 'inactive'); return past.length > 0 ? <div className="mb-3 flex items-center gap-1.5 text-[10px] text-orange-400/60"><History className="w-3 h-3"/><span>{past.length} inquilino{past.length > 1 ? 's' : ''} anterior{past.length > 1 ? 'es' : ''}</span></div> : null; })()}
                         <div className="space-y-1 opacity-60 hover:opacity-100 transition-opacity mb-3"><p className="text-gray-400 text-[10px] flex gap-1 truncate items-center"><MapPin className="w-3 h-3 text-gray-600"/> {p.address}</p></div>
                       </div>
@@ -646,7 +667,7 @@ export default function App() {
               {/* ACTIONS */}
               <div className="flex gap-3">
                 {mode === 'split' && <button onClick={distributeRentEvenly} className="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20 transition"><Calculator className="w-4 h-4"/> Aplicar División</button>}
-                <button onClick={() => { setTenantForm({ employee_id: '', name: '', name_kana: '', property_id: prop.id, rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0] }); setIsAddTenantModalOpen(true); }} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition"><UserPlus className="w-4 h-4"/> Registrar Inquilino</button>
+                <button onClick={() => { setTenantForm({ employee_id: '', name: '', name_kana: '', company: '', property_id: prop.id, rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0] }); setIsAddTenantModalOpen(true); }} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition"><UserPlus className="w-4 h-4"/> Registrar Inquilino</button>
               </div>
 
               {/* TENANT TABLE - ACTIVE */}
@@ -666,6 +687,7 @@ export default function App() {
                         <div className="col-span-4">
                           <div className="text-white text-sm font-bold truncate">{t.name}</div>
                           <div className="text-[10px] text-gray-500 font-mono">{t.employee_id}</div>
+                          {t.company && <div className="text-[9px] text-cyan-400/70 truncate">派遣先: {t.company}</div>}
                           {t.rent_contribution === 0 && <div className="text-[9px] text-red-400 font-bold mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> SIN PRECIO</div>}
                         </div>
                         <div className="col-span-2 text-center"><div className="text-[10px] text-gray-400 font-mono">{t.entry_date || '—'}</div></div>
@@ -796,7 +818,7 @@ export default function App() {
               <div className="absolute left-4 top-4 text-gray-500"><User className="w-6 h-6" /></div>
               {isIdFound && <div className="absolute right-4 top-4 text-green-500 animate-in zoom-in"><Check className="w-6 h-6" /></div>}
             </div>
-            {isIdFound && <p className="text-green-400 text-xs mt-2 font-medium flex items-center gap-1"><Database className="w-3 h-3" /> Empleado encontrado.</p>}
+            {isIdFound && <div className="mt-2 space-y-1"><p className="text-green-400 text-xs font-medium flex items-center gap-1"><Database className="w-3 h-3" /> Empleado encontrado.</p>{tenantForm.company && <p className="text-cyan-400 text-xs flex items-center gap-1"><Building className="w-3 h-3" /> 派遣先: {tenantForm.company}</p>}</div>}
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs text-gray-400 block mb-1">Nombre</label><input className="w-full bg-gray-800 border border-gray-700 p-3 rounded-xl text-white" value={tenantForm.name} onChange={e => setTenantForm({ ...tenantForm, name: e.target.value })} required /></div>
