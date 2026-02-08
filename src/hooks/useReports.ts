@@ -17,37 +17,13 @@ import {
   AppDatabase,
 } from '../types/database';
 import { unsDB } from '../db/dexie';
-
-// Extraer zona/distrito del nombre o dirección
-function extractArea(name: string, address: string): string {
-  // Buscar patrones comunes de zona en nombre de propiedad
-  const areaPatterns = [
-    /(.+事業所)/,
-    /(.+工場)/,
-    /(.+支店)/,
-  ];
-  for (const p of areaPatterns) {
-    const m = name.match(p);
-    if (m) return m[1];
-  }
-  // Usar primeros caracteres de dirección como zona
-  if (address) {
-    const parts = address.split(/[　 ]/);
-    if (parts.length >= 2) return parts[0];
-    return address.substring(0, 6);
-  }
-  return '';
-}
+import { isPropertyActive, extractArea } from '../utils/propertyHelpers';
 
 export function useReports(db: AppDatabase) {
 
   // Propiedades activas (contrato vigente)
   const activeProperties = useMemo(() => {
-    return db.properties.filter(p => {
-      if (!p.contract_end) return true;
-      const d = new Date(p.contract_end);
-      return isNaN(d.getTime()) || d > new Date();
-    });
+    return db.properties.filter(isPropertyActive);
   }, [db.properties]);
 
   // Inquilinos activos

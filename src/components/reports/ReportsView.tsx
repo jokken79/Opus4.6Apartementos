@@ -14,6 +14,7 @@ import {
 import { useReports } from '../../hooks/useReports';
 import { useReportExport } from '../../hooks/useReportExport';
 import { MonthlySnapshot, AppDatabase } from '../../types/database';
+import { isPropertyActive } from '../../utils/propertyHelpers';
 
 interface ReportsViewProps {
   db: AppDatabase;
@@ -106,11 +107,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ db, cycle, onUpdateTen
 
   // Datos agrupados por propiedad con inquilinos (家賃控除 vista)
   const tenantsByProperty = useMemo(() => {
-    const activeProps = db.properties.filter(p => {
-      if (!p.contract_end) return true;
-      const d = new Date(p.contract_end);
-      return isNaN(d.getTime()) || d > new Date();
-    });
+    const activeProps = db.properties.filter(isPropertyActive);
 
     return activeProps.map(p => {
       const allTenants = db.tenants.filter(t => t.property_id === p.id);
