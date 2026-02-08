@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Building, Users, LayoutDashboard, Search, Database, UploadCloud, PlusCircle, X,
   FileCheck, AlertCircle, Calculator, DollarSign, UserPlus, Save, Calendar, Check,
@@ -34,7 +34,7 @@ interface Tenant {
   company?: string; property_id: number; rent_contribution: number; parking_fee: number;
   entry_date?: string; exit_date?: string; cleaning_fee?: number; status: 'active' | 'inactive';
 }
-interface Employee { id: string; name: string; name_kana: string; company: string; full_data: any; }
+interface Employee { id: string; name: string; name_kana: string; company: string; full_data: Record<string, unknown>; }
 interface AppConfig { companyName: string; closingDay: number; defaultCleaningFee: number; }
 interface AppDatabase { properties: Property[]; tenants: Tenant[]; employees: Employee[]; config: AppConfig; }
 interface AlertItem { type: 'warning' | 'danger'; msg: string; }
@@ -82,7 +82,7 @@ const GlassCard = ({ children, className = "", hoverEffect = true }: { children:
   </div>
 );
 
-const StatCard = ({ title, value, subtext, icon: Icon, trend }: { title: string; value: string; subtext: string; icon: any; trend?: 'up' | 'down' }) => (
+const StatCard = ({ title, value, subtext, icon: Icon, trend }: { title: string; value: string; subtext: string; icon: React.ComponentType<{ className?: string }>; trend?: 'up' | 'down' }) => (
   <GlassCard hoverEffect={true} className="p-5">
     <div className="flex justify-between items-start mb-3">
       <div className="p-2.5 bg-gradient-to-br from-gray-800 to-black rounded-xl border border-white/5 shadow-inner"><Icon className="text-blue-400 w-5 h-5" /></div>
@@ -97,15 +97,22 @@ const StatCard = ({ title, value, subtext, icon: Icon, trend }: { title: string;
 );
 
 const Modal = ({ isOpen, onClose, title, children, wide = false }: { isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) => {
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, onClose]);
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+    <div ref={overlayRef} role="dialog" aria-modal="true" aria-labelledby="modal-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300" onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}>
       <div className={`bg-[#15171c] border border-blue-500/20 rounded-2xl w-full ${wide ? 'max-w-5xl' : 'max-w-3xl'} shadow-2xl relative max-h-[90vh] overflow-y-auto ring-1 ring-white/10 animate-in zoom-in-95 duration-300`}>
         <div className="flex justify-between items-center p-6 border-b border-gray-800/50 sticky top-0 bg-[#15171c]/95 backdrop-blur z-20">
-          <h3 className="text-xl font-bold text-white flex items-center gap-3">
+          <h3 id="modal-title" className="text-xl font-bold text-white flex items-center gap-3">
             <div className="w-1 h-6 bg-gradient-to-b from-blue-400 to-blue-600 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>{title}
           </h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-white transition bg-gray-900/50 p-2 rounded-full hover:bg-gray-800 border border-transparent hover:border-gray-700"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} aria-label="Cerrar" className="text-gray-500 hover:text-white transition bg-gray-900/50 p-2 rounded-full hover:bg-gray-800 border border-transparent hover:border-gray-700"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-6 md:p-8 space-y-6">{children}</div>
       </div>
@@ -113,15 +120,15 @@ const Modal = ({ isOpen, onClose, title, children, wide = false }: { isOpen: boo
   );
 };
 
-const NavButton = ({ icon: Icon, active, onClick, label }: { icon: any; active: boolean; onClick: () => void; label: string }) => (
-  <button onClick={onClick} className={`relative group w-12 h-12 flex flex-col items-center justify-center rounded-xl transition-all duration-300 ${active ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 scale-110' : 'text-gray-500 hover:text-white hover:bg-white/10'}`}>
+const NavButton = ({ icon: Icon, active, onClick, label }: { icon: React.ComponentType<{ className?: string }>; active: boolean; onClick: () => void; label: string }) => (
+  <button onClick={onClick} aria-label={label} title={label} className={`relative group w-12 h-12 flex flex-col items-center justify-center rounded-xl transition-all duration-300 ${active ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 scale-110' : 'text-gray-500 hover:text-white hover:bg-white/10'}`}>
     <Icon className={`w-5 h-5 ${active ? 'stroke-[2.5px]' : 'stroke-2'}`} />
     <span className="absolute left-14 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap border border-white/10 pointer-events-none z-50">{label}</span>
   </button>
 );
 
-const NavButtonMobile = ({ icon: Icon, active, onClick, label }: { icon: any; active: boolean; onClick: () => void; label: string }) => (
-  <button onClick={onClick} className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all ${active ? 'text-blue-400' : 'text-gray-500'}`}>
+const NavButtonMobile = ({ icon: Icon, active, onClick, label }: { icon: React.ComponentType<{ className?: string }>; active: boolean; onClick: () => void; label: string }) => (
+  <button onClick={onClick} aria-label={label} className={`flex flex-col items-center justify-center p-2 rounded-lg transition-all ${active ? 'text-blue-400' : 'text-gray-500'}`}>
     <Icon className={`w-6 h-6 mb-1 ${active ? 'stroke-[2.5px]' : 'stroke-2'}`} />
     <span className="text-[10px] font-bold tracking-wide">{label}</span>
   </button>
@@ -233,6 +240,9 @@ const ImportViewComponent = ({ isDragging, importStatus, previewSummary, onDragO
   </div>
 );
 
+const EMPTY_PROPERTY_FORM = { id: null as number | null, name: '', room_number: '', postal_code: '', address_auto: '', address_detail: '', manager_name: '', manager_phone: '', contract_start: new Date().toISOString().split('T')[0], contract_end: '', type: '1K', capacity: 2, rent_cost: 0, rent_price_uns: 0, parking_cost: 0, kanri_hi: 0, billing_mode: 'fixed' as const };
+const EMPTY_TENANT_FORM = { employee_id: '', name: '', name_kana: '', company: '', property_id: '' as string | number, rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0] };
+
 // ============================================
 // ============ APP PRINCIPAL =================
 // ============================================
@@ -240,12 +250,29 @@ export default function App() {
   useLoadSheetJS();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
-  const [db, setDb] = useState<AppDatabase>(() => { try { const s = localStorage.getItem('uns_db_v6_0'); return s ? JSON.parse(s) : INITIAL_DB; } catch { return INITIAL_DB; } });
-  useEffect(() => { localStorage.setItem('uns_db_v6_0', JSON.stringify(db)); }, [db]);
+  const [db, setDb] = useState<AppDatabase>(() => {
+    try {
+      const s = localStorage.getItem('uns_db_v6_0');
+      if (!s) return INITIAL_DB;
+      const parsed = JSON.parse(s);
+      if (!parsed.properties || !Array.isArray(parsed.properties) || !parsed.tenants || !Array.isArray(parsed.tenants) || !parsed.employees || !Array.isArray(parsed.employees)) {
+        console.warn('Corrupt localStorage data, resetting to defaults');
+        return INITIAL_DB;
+      }
+      if (!parsed.config) parsed.config = INITIAL_DB.config;
+      if (parsed.config.defaultCleaningFee === undefined) parsed.config.defaultCleaningFee = 30000;
+      return parsed;
+    } catch { return INITIAL_DB; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('uns_db_v6_0', JSON.stringify(db)); }
+    catch (e) { if (e instanceof DOMException && (e.code === 22 || e.name === 'QuotaExceededError')) alert('Almacenamiento lleno. Respalde sus datos desde Configuración.'); }
+  }, [db]);
 
   // --- ESTADOS ---
   const [isDragging, setIsDragging] = useState(false);
   const [importStatus, setImportStatus] = useState({ type: '', msg: '' });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [previewData, setPreviewData] = useState<any>([]);
   const [detectedType, setDetectedType] = useState<string | null>(null);
   const [previewSummary, setPreviewSummary] = useState('');
@@ -260,6 +287,8 @@ export default function App() {
   const [propertyViewMode, setPropertyViewMode] = useState('active');
   const [companyFilter, setCompanyFilter] = useState('');
   const [empSearch, setEmpSearch] = useState('');
+  const [empPage, setEmpPage] = useState(1);
+  const EMP_PER_PAGE = 50;
 
   const [tenantForm, setTenantForm] = useState<any>({
     employee_id: '', name: '', name_kana: '', company: '', property_id: '',
@@ -284,7 +313,7 @@ export default function App() {
 
   // --- MÉTRICAS ---
   const dashboardData = useMemo(() => {
-    const ap = db.properties.filter(p => !p.contract_end || new Date(p.contract_end) > new Date());
+    const ap = db.properties.filter(p => { if (!p.contract_end) return true; const d = new Date(p.contract_end); return isNaN(d.getTime()) || d > new Date(); });
     const occ = db.tenants.filter(t => t.property_id !== null && t.status === 'active').length;
     const cap = ap.reduce((a, b) => a + (b.capacity || 0), 0);
     const rent = db.tenants.reduce((a, t) => a + (t.status === 'active' ? t.rent_contribution : 0), 0);
@@ -367,7 +396,7 @@ export default function App() {
   const distributeRentEvenly = () => {
     if (!selectedPropertyForRent) return;
     const ts = db.tenants.filter(t => t.property_id === selectedPropertyForRent.id && t.status === 'active');
-    if (ts.length === 0) return;
+    if (ts.length === 0) { alert('No hay inquilinos activos para dividir la renta.'); return; }
     const split = Math.floor(selectedPropertyForRent.rent_price_uns / ts.length);
     const remainder = selectedPropertyForRent.rent_price_uns % ts.length;
     setDb(prev => ({ ...prev, tenants: prev.tenants.map((t, i) => {
@@ -408,9 +437,10 @@ export default function App() {
         const X = (window as any).XLSX;
         const wb = X.read(new Uint8Array(e.target?.result as ArrayBuffer), { type: 'array' });
         const sn: string[] = wb.SheetNames;
-        const emp = sn.find((n: string) => n.includes('Genzai') || n.includes('Ukeoi') || n.includes('台帳'));
+        let emp = sn.find((n: string) => n.includes('Genzai') || n.includes('Ukeoi') || n.includes('台帳'));
         const prop = sn.find((n: string) => n.includes('会社寮情報'));
         const ten = sn.find((n: string) => n.includes('入居者一覧'));
+        if (!emp && !prop && !ten && sn.length === 1) emp = sn[0];
         if (emp) { const d = X.utils.sheet_to_json(wb.Sheets[emp], { defval: "" }); setPreviewData(d); setDetectedType('employees'); setPreviewSummary(`社員台帳 (${emp}): ${d.length} empleados detectados.`); setImportStatus({ type: 'success', msg: 'OK' }); }
         else if (prop || ten) {
           const c: any = { properties: [], tenants: [] }; let t = 'Gestión de Renta:\n';
@@ -456,7 +486,7 @@ export default function App() {
           {searchTerm && <button onClick={() => setSearchTerm('')} className="text-gray-500 hover:text-white shrink-0"><X className="w-3.5 h-3.5"/></button>}
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-[#15171c] border border-white/10 flex items-center justify-center hover:bg-[#20242c] cursor-pointer transition relative"><Bell className="w-4 h-4 text-gray-400" />{dashboardData.alerts.length > 0 && <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}</div>
+          <button aria-label={`Alertas (${dashboardData.alerts.length})`} className="w-8 h-8 rounded-full bg-[#15171c] border border-white/10 flex items-center justify-center hover:bg-[#20242c] cursor-pointer transition relative"><Bell className="w-4 h-4 text-gray-400" />{dashboardData.alerts.length > 0 && <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}</button>
           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-gray-700 to-gray-600 border border-gray-500 overflow-hidden"><img src="https://api.dicebear.com/7.x/avataaars/svg?seed=AdminUNS" alt="U" /></div>
         </div>
       </header>
@@ -591,7 +621,7 @@ export default function App() {
                 <>
                   <div className="flex items-center bg-[#15171c] border border-white/10 rounded-xl px-4 py-3 focus-within:border-blue-500/50 transition-all">
                     <Search className="w-4 h-4 text-gray-500" />
-                    <input type="text" placeholder="Buscar por ID, nombre, カナ, empresa..." className="bg-transparent border-none outline-none text-sm text-white w-full ml-3 placeholder-gray-600" value={empSearch} onChange={e => setEmpSearch(e.target.value)} />
+                    <input type="text" placeholder="Buscar por ID, nombre, カナ, empresa..." className="bg-transparent border-none outline-none text-sm text-white w-full ml-3 placeholder-gray-600" value={empSearch} onChange={e => { setEmpSearch(e.target.value); setEmpPage(1); }} />
                     {empSearch && <button onClick={() => setEmpSearch('')} className="text-gray-500 hover:text-white"><X className="w-4 h-4"/></button>}
                   </div>
                   <GlassCard hoverEffect={false} className="overflow-hidden">
@@ -605,7 +635,7 @@ export default function App() {
                           <th className="text-left p-4 text-[10px] text-gray-500 uppercase font-bold">Estado</th>
                         </tr></thead>
                         <tbody>
-                          {filteredEmployees.slice(0, 100).map(emp => {
+                          {filteredEmployees.slice((empPage - 1) * EMP_PER_PAGE, empPage * EMP_PER_PAGE).map(emp => {
                             const isAssigned = db.tenants.some(t => t.employee_id === emp.id && t.status === 'active');
                             const assignedProp = isAssigned ? db.properties.find(p => p.id === db.tenants.find(t => t.employee_id === emp.id && t.status === 'active')?.property_id) : null;
                             return (
@@ -621,7 +651,16 @@ export default function App() {
                         </tbody>
                       </table>
                     </div>
-                    {filteredEmployees.length > 100 && <div className="p-4 text-center text-gray-500 text-xs border-t border-white/5">Mostrando 100 de {filteredEmployees.length} resultados</div>}
+                    {filteredEmployees.length > EMP_PER_PAGE && (
+                      <div className="p-4 flex items-center justify-between border-t border-white/5">
+                        <span className="text-xs text-gray-500">{(empPage - 1) * EMP_PER_PAGE + 1}–{Math.min(empPage * EMP_PER_PAGE, filteredEmployees.length)} de {filteredEmployees.length}</span>
+                        <div className="flex gap-2">
+                          <button onClick={() => setEmpPage(p => Math.max(1, p - 1))} disabled={empPage <= 1} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-800 text-gray-400 border border-white/10 disabled:opacity-30 hover:bg-gray-700 transition">← Ant</button>
+                          <span className="px-3 py-1.5 text-xs text-white font-mono">{empPage}/{Math.ceil(filteredEmployees.length / EMP_PER_PAGE)}</span>
+                          <button onClick={() => setEmpPage(p => Math.min(Math.ceil(filteredEmployees.length / EMP_PER_PAGE), p + 1))} disabled={empPage >= Math.ceil(filteredEmployees.length / EMP_PER_PAGE)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-800 text-gray-400 border border-white/10 disabled:opacity-30 hover:bg-gray-700 transition">Sig →</button>
+                        </div>
+                      </div>
+                    )}
                   </GlassCard>
                 </>
               )}
@@ -762,7 +801,7 @@ export default function App() {
       </Modal>
 
       {/* ====== MODAL: PROPERTY FORM ====== */}
-      <Modal isOpen={isPropertyModalOpen} onClose={() => setIsPropertyModalOpen(false)} title={propertyForm.id ? "Editar Propiedad" : "Nueva Propiedad"}>
+      <Modal isOpen={isPropertyModalOpen} onClose={() => { setPropertyForm({...EMPTY_PROPERTY_FORM}); setIsPropertyModalOpen(false); }} title={propertyForm.id ? "Editar Propiedad" : "Nueva Propiedad"}>
         <form onSubmit={handleSaveProperty} className="space-y-6">
           <div className="grid grid-cols-2 gap-5">
             <div><label className="text-xs text-gray-400 font-bold block mb-1.5 ml-1">Nombre Edificio</label><input className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white focus:border-blue-500 outline-none transition" value={propertyForm.name} onChange={e => setPropertyForm({ ...propertyForm, name: e.target.value })} placeholder="Ej: Legend K" required /></div>
@@ -775,7 +814,7 @@ export default function App() {
                 <div className="col-span-4"><label className="text-[10px] text-gray-500 block mb-1">〒 Postal</label><input className="w-full bg-black border border-gray-700 p-2.5 rounded-lg text-white font-mono outline-none focus:border-blue-500" placeholder="4710805" maxLength={8} value={propertyForm.postal_code} onChange={e => setPropertyForm({ ...propertyForm, postal_code: e.target.value })} /></div>
                 <div className="col-span-8 flex items-end"><button type="button" onClick={fetchAddressFromZip} disabled={isSearchingAddress} className="bg-blue-600/90 hover:bg-blue-500 text-white text-xs font-bold px-4 py-3 rounded-lg w-full flex items-center justify-center gap-2 disabled:opacity-50 transition">{isSearchingAddress ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}{isSearchingAddress ? 'Buscando...' : 'Autocompletar'}</button></div>
               </div>
-              {addressSearchError && <p className="text-[10px] text-red-400 mb-3 flex items-center gap-1 bg-red-900/20 p-2 rounded"><AlertCircle className="w-3 h-3" /> {addressSearchError}</p>}
+              {addressSearchError && <div className="text-[10px] text-red-400 mb-3 flex items-center gap-2 bg-red-900/20 p-2 rounded"><AlertCircle className="w-3 h-3" /><span>{addressSearchError}</span><button type="button" onClick={fetchAddressFromZip} className="text-blue-400 underline hover:text-blue-300 ml-auto shrink-0">Reintentar</button></div>}
               <div className="space-y-3">
                 <input className="w-full bg-black border border-gray-700 p-3 rounded-lg text-gray-300 focus:border-blue-500 outline-none" value={propertyForm.address_auto} onChange={e => setPropertyForm({ ...propertyForm, address_auto: e.target.value })} placeholder="都道府県+市区町村 (Auto)" />
                 <input className="w-full bg-black border border-gray-700 p-3 rounded-lg text-white font-bold focus:border-blue-500 outline-none" value={propertyForm.address_detail} onChange={e => setPropertyForm({ ...propertyForm, address_detail: e.target.value })} placeholder="番地 / 建物名" />
@@ -786,10 +825,10 @@ export default function App() {
             <div className="col-span-2 bg-gray-800/30 p-5 rounded-2xl border border-white/5">
               <h4 className="text-green-400 text-xs font-bold mb-4 uppercase flex items-center gap-2"><DollarSign className="w-3 h-3" /> Estructura de Costos (不動産屋に払う)</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div><label className="text-[10px] text-gray-500 block mb-1">家賃 (Renta)</label><input type="number" className="w-full bg-black border border-gray-700 p-2.5 rounded-lg text-white font-mono focus:border-green-500 outline-none" value={propertyForm.rent_cost} onChange={e => setPropertyForm({ ...propertyForm, rent_cost: e.target.value })} /></div>
-                <div><label className="text-[10px] text-gray-500 block mb-1">管理費</label><input type="number" className="w-full bg-black border border-gray-700 p-2.5 rounded-lg text-white font-mono focus:border-green-500 outline-none" value={propertyForm.kanri_hi} onChange={e => setPropertyForm({ ...propertyForm, kanri_hi: e.target.value })} /></div>
-                <div><label className="text-[10px] text-blue-400 block mb-1">駐車場代</label><input type="number" className="w-full bg-black border border-blue-900/30 p-2.5 rounded-lg text-blue-200 font-mono focus:border-blue-500 outline-none" value={propertyForm.parking_cost} onChange={e => setPropertyForm({ ...propertyForm, parking_cost: e.target.value })} /></div>
-                <div><label className="text-[10px] text-yellow-500 block mb-1 font-bold">Precio UNS</label><input type="number" className="w-full bg-black border border-yellow-900/30 p-2.5 rounded-lg text-yellow-400 font-mono font-bold focus:border-yellow-500 outline-none" value={propertyForm.rent_price_uns} onChange={e => setPropertyForm({ ...propertyForm, rent_price_uns: e.target.value })} /></div>
+                <div><label className="text-[10px] text-gray-500 block mb-1">家賃 (Renta)</label><input type="number" min="0" step="1000" className="w-full bg-black border border-gray-700 p-2.5 rounded-lg text-white font-mono focus:border-green-500 outline-none" value={propertyForm.rent_cost} onChange={e => setPropertyForm({ ...propertyForm, rent_cost: e.target.value })} /></div>
+                <div><label className="text-[10px] text-gray-500 block mb-1">管理費</label><input type="number" min="0" step="500" className="w-full bg-black border border-gray-700 p-2.5 rounded-lg text-white font-mono focus:border-green-500 outline-none" value={propertyForm.kanri_hi} onChange={e => setPropertyForm({ ...propertyForm, kanri_hi: e.target.value })} /></div>
+                <div><label className="text-[10px] text-blue-400 block mb-1">駐車場代</label><input type="number" min="0" step="500" className="w-full bg-black border border-blue-900/30 p-2.5 rounded-lg text-blue-200 font-mono focus:border-blue-500 outline-none" value={propertyForm.parking_cost} onChange={e => setPropertyForm({ ...propertyForm, parking_cost: e.target.value })} /></div>
+                <div><label className="text-[10px] text-yellow-500 block mb-1 font-bold">Precio UNS</label><input type="number" min="0" step="1000" className="w-full bg-black border border-yellow-900/30 p-2.5 rounded-lg text-yellow-400 font-mono font-bold focus:border-yellow-500 outline-none" value={propertyForm.rent_price_uns} onChange={e => setPropertyForm({ ...propertyForm, rent_price_uns: e.target.value })} /></div>
               </div>
             </div>
 
@@ -803,7 +842,7 @@ export default function App() {
             </div>
 
             <div><label className="text-xs text-gray-400 block mb-1 ml-1">Tipo</label><input className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white outline-none" value={propertyForm.type} onChange={e => setPropertyForm({ ...propertyForm, type: e.target.value })} /></div>
-            <div><label className="text-xs text-gray-400 block mb-1 ml-1">Capacidad</label><input type="number" className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white outline-none" value={propertyForm.capacity} onChange={e => setPropertyForm({ ...propertyForm, capacity: e.target.value })} /></div>
+            <div><label className="text-xs text-gray-400 block mb-1 ml-1">Capacidad</label><input type="number" min="1" max="20" className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white outline-none" value={propertyForm.capacity} onChange={e => setPropertyForm({ ...propertyForm, capacity: e.target.value })} /></div>
           </div>
           <div className="border-t border-gray-800 pt-6 grid grid-cols-2 gap-5">
             <div><label className="text-xs text-gray-400 block mb-1">Admin</label><input className="w-full bg-black/50 border border-gray-700 p-2.5 rounded-lg text-white" value={propertyForm.manager_name} onChange={e => setPropertyForm({ ...propertyForm, manager_name: e.target.value })} /></div>
@@ -812,14 +851,14 @@ export default function App() {
             <div><label className="text-xs text-gray-400 block mb-1">Fin Contrato</label><input type="date" className="w-full bg-black/50 border border-gray-700 p-2.5 rounded-lg text-white" value={propertyForm.contract_end} onChange={e => setPropertyForm({ ...propertyForm, contract_end: e.target.value })} /></div>
           </div>
           <div className="flex gap-4 pt-4">
-            <button type="button" onClick={() => setIsPropertyModalOpen(false)} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-4 rounded-xl hover:bg-white/5 transition">Cancelar</button>
+            <button type="button" onClick={() => { setPropertyForm({...EMPTY_PROPERTY_FORM}); setIsPropertyModalOpen(false); }} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-4 rounded-xl hover:bg-white/5 transition">Cancelar</button>
             <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-500/20 transition hover:-translate-y-1">Guardar</button>
           </div>
         </form>
       </Modal>
 
       {/* ====== MODAL: ADD TENANT ====== */}
-      <Modal isOpen={isAddTenantModalOpen} onClose={() => setIsAddTenantModalOpen(false)} title="Registrar Inquilino">
+      <Modal isOpen={isAddTenantModalOpen} onClose={() => { setTenantForm({...EMPTY_TENANT_FORM}); setIsIdFound(false); setIsAddTenantModalOpen(false); }} title="Registrar Inquilino">
         <form onSubmit={handleAddTenant} className="space-y-6">
           <div className="bg-gray-800/50 p-6 rounded-2xl border border-white/5">
             <label className="text-xs text-blue-500 font-bold block mb-2 uppercase tracking-wide">Paso 1: 社員No (ID Empleado)</label>
@@ -838,7 +877,7 @@ export default function App() {
           {/* ENTRY DATE */}
           <div className="bg-gray-800/50 p-6 rounded-2xl border border-white/5">
             <label className="text-xs text-blue-500 font-bold block mb-3 uppercase tracking-wide flex items-center gap-2"><CalendarDays className="w-3 h-3" /> Paso 2: Fecha de Entrada (入居日)</label>
-            <input type="date" className="w-full bg-black border border-gray-700 p-3 rounded-xl text-white font-mono text-lg focus:border-blue-500 outline-none" value={tenantForm.entry_date} onChange={e => setTenantForm({ ...tenantForm, entry_date: e.target.value })} />
+            <input type="date" required className="w-full bg-black border border-gray-700 p-3 rounded-xl text-white font-mono text-lg focus:border-blue-500 outline-none" value={tenantForm.entry_date} onChange={e => setTenantForm({ ...tenantForm, entry_date: e.target.value })} />
             {tenantForm.entry_date && (() => {
               const d = new Date(tenantForm.entry_date);
               const now = new Date();
@@ -855,8 +894,8 @@ export default function App() {
           <div className="bg-gray-800/50 p-6 rounded-2xl border border-white/5">
             <label className="text-xs text-blue-500 font-bold block mb-4 uppercase tracking-wide">Paso 3: Precio Mensual</label>
             <div className="grid grid-cols-2 gap-6">
-              <div><label className="text-xs text-gray-400 block mb-1">Renta (¥/月)</label><input type="number" className="w-full bg-black border border-gray-700 p-3 rounded-xl text-white font-mono text-lg focus:border-blue-500 outline-none" value={tenantForm.rent_contribution} onChange={e => setTenantForm({ ...tenantForm, rent_contribution: e.target.value })} /></div>
-              <div><label className="text-xs text-blue-400 block mb-1">Parking (¥/月)</label><input type="number" className="w-full bg-black border border-blue-900/50 p-3 rounded-xl text-blue-200 font-mono text-lg focus:border-blue-500 outline-none" value={tenantForm.parking_fee} onChange={e => setTenantForm({ ...tenantForm, parking_fee: e.target.value })} /></div>
+              <div><label className="text-xs text-gray-400 block mb-1">Renta (¥/月)</label><input type="number" min="0" step="1000" className="w-full bg-black border border-gray-700 p-3 rounded-xl text-white font-mono text-lg focus:border-blue-500 outline-none" value={tenantForm.rent_contribution} onChange={e => setTenantForm({ ...tenantForm, rent_contribution: e.target.value })} /></div>
+              <div><label className="text-xs text-blue-400 block mb-1">Parking (¥/月)</label><input type="number" min="0" step="500" className="w-full bg-black border border-blue-900/50 p-3 rounded-xl text-blue-200 font-mono text-lg focus:border-blue-500 outline-none" value={tenantForm.parking_fee} onChange={e => setTenantForm({ ...tenantForm, parking_fee: e.target.value })} /></div>
             </div>
             {tenantForm.entry_date && parseInt(tenantForm.rent_contribution) > 0 && (() => {
               const pr = calculateProRata(parseInt(tenantForm.rent_contribution), tenantForm.entry_date);
@@ -866,7 +905,7 @@ export default function App() {
           </div>
 
           <div className="flex gap-4 pt-2">
-            <button type="button" onClick={() => setIsAddTenantModalOpen(false)} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-4 rounded-xl hover:bg-white/5 transition">Cancelar</button>
+            <button type="button" onClick={() => { setTenantForm({...EMPTY_TENANT_FORM}); setIsIdFound(false); setIsAddTenantModalOpen(false); }} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-4 rounded-xl hover:bg-white/5 transition">Cancelar</button>
             <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg hover:shadow-blue-500/20 transition hover:-translate-y-1">Confirmar</button>
           </div>
         </form>
