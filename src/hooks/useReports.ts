@@ -139,16 +139,16 @@ export function useReports(db: ReportDatabase) {
       entry.payrollDeduction += t.rent_contribution + t.parking_fee;
     });
 
-    // Calcular costos por propiedad (para empresas con inquilinos)
-    companyMap.forEach((entry) => {
+    // Calcular costos por propiedad (proporcional a inquilinos de cada empresa)
+    companyMap.forEach((entry, company) => {
       entry.propertyIds.forEach(pid => {
         const prop = db.properties.find(p => p.id === pid);
         if (prop) {
           const tenantsInProp = activeTenants.filter(t => t.property_id === pid);
-          const companyTenantsInProp = activeTenants.filter(
-            t => t.property_id === pid && companyMap.has(t.company || '(sin empresa)')
+          const companyTenantsInProp = tenantsInProp.filter(
+            t => (t.company || '(sin empresa)') === company
           );
-          // Proporcional del costo según inquilinos de esta empresa en la propiedad
+          // Proporcional del costo según inquilinos de ESTA empresa en la propiedad
           const totalInProp = tenantsInProp.length || 1;
           const fromCompany = companyTenantsInProp.length;
           const propCost = (prop.rent_cost || 0) + (prop.kanri_hi || 0) + (prop.parking_cost || 0);

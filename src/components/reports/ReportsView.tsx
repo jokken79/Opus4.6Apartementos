@@ -31,6 +31,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ db, cycle }) => {
   const [companyFilter, setCompanyFilter] = useState('');
   const [expandedSnapshot, setExpandedSnapshot] = useState<string | null>(null);
   const [compareIds, setCompareIds] = useState<[string, string] | null>(null);
+  const [historyVersion, setHistoryVersion] = useState(0);
 
   const {
     propertyReport, companyReport, payrollReport,
@@ -40,7 +41,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ db, cycle }) => {
 
   const { exportToExcel, exportToPDF } = useReportExport();
 
-  const history = useMemo(() => loadHistory(), [loadHistory]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const history = useMemo(() => loadHistory(), [loadHistory, historyVersion]);
 
   // Empresas únicas para filtro
   const uniqueCompanies = useMemo(() => {
@@ -85,6 +87,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ db, cycle }) => {
     if (!window.confirm(`¿Cerrar el mes ${cycle.month} (${currentCycleMonth})?\n\nEsto guardará un snapshot de todos los reportes actuales.`)) return;
     const result = saveSnapshot(currentCycleMonth, cycle.start, cycle.end);
     if (result.success) {
+      setHistoryVersion(v => v + 1);
       alert(`Cierre de ${cycle.month} guardado correctamente.`);
     } else {
       alert(`Error: ${result.error}`);
@@ -432,7 +435,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ db, cycle }) => {
                           </div>
                         </div>
                         <button
-                          onClick={e => { e.stopPropagation(); if (window.confirm(`¿Eliminar cierre ${snap.cycle_month}?`)) deleteSnapshot(snap.id); }}
+                          onClick={e => { e.stopPropagation(); if (window.confirm(`¿Eliminar cierre ${snap.cycle_month}?`)) { deleteSnapshot(snap.id); setHistoryVersion(v => v + 1); } }}
                           className="text-gray-600 hover:text-red-400 p-1 transition"
                         >
                           <Trash2 className="w-4 h-4" />
