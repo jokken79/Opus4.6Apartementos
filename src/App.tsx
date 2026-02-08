@@ -4,8 +4,9 @@ import {
   FileCheck, AlertCircle, Calculator, DollarSign, UserPlus, Save, Calendar, Check,
   Trash2, Phone, User, History, MapPin, Edit2, Map, Hash, Loader2, Bell,
   TrendingUp, ArrowRight, Download, Upload, Settings, Clock, Mail, Award,
-  CalendarDays, Percent, LogOut, Table2
+  CalendarDays, Percent, LogOut, Table2, FileText
 } from 'lucide-react';
+import { ReportsView } from './components/reports/ReportsView';
 
 // --- SheetJS ---
 const useLoadSheetJS = () => {
@@ -497,6 +498,7 @@ export default function App() {
           <NavButton icon={LayoutDashboard} active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} label="HQ" />
           <NavButton icon={Building} active={activeTab === 'properties'} onClick={() => setActiveTab('properties')} label="Prop." />
           <NavButton icon={Users} active={activeTab === 'employees'} onClick={() => setActiveTab('employees')} label="社員" />
+          <NavButton icon={FileText} active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} label="報告" />
           <div className="h-px w-8 bg-gray-800"></div>
           <NavButton icon={UploadCloud} active={activeTab === 'import'} onClick={() => setActiveTab('import')} label="Sync" />
           <NavButton icon={Settings} active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} label="Config" />
@@ -667,6 +669,9 @@ export default function App() {
             </div>
           )}
 
+          {/* ====== REPORTES ====== */}
+          {activeTab === 'reports' && <ReportsView db={db} cycle={cycle} />}
+
           {/* ====== IMPORT ====== */}
           {activeTab === 'import' && <ImportViewComponent isDragging={isDragging} importStatus={importStatus} previewSummary={previewSummary} onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }} onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }} onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length) processExcelFile(e.dataTransfer.files[0]); }} onFileChange={(e) => e.target.files?.length && processExcelFile(e.target.files[0])} onSave={saveToDatabase} />}
 
@@ -681,7 +686,7 @@ export default function App() {
         <NavButtonMobile icon={Building} active={activeTab === 'properties'} onClick={() => setActiveTab('properties')} label="Prop." />
         <div className="relative -top-5"><button onClick={() => setActiveTab('import')} className="bg-blue-600 text-white p-4 rounded-full shadow-lg shadow-blue-500/30 border-4 border-[#0d0f12]"><UploadCloud className="w-6 h-6" /></button></div>
         <NavButtonMobile icon={Users} active={activeTab === 'employees'} onClick={() => setActiveTab('employees')} label="社員" />
-        <NavButtonMobile icon={Settings} active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} label="Config" />
+        <NavButtonMobile icon={FileText} active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} label="報告" />
       </nav>
 
       {/* ====== MODAL: RENT MANAGER ====== */}

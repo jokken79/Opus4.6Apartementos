@@ -137,6 +137,71 @@ export interface BillingCycle {
   closingDay: number;
 }
 
+// ============ REPORTES MENSUALES ============
+
+// Fila del reporte por propiedad (detalle por habitación)
+export interface PropertyReportRow {
+  no: number;
+  area: string; // 地区
+  property_name: string; // アパート名
+  room_number: string; // 部屋番号
+  layout: string; // 間取 (1K, 2DK...)
+  occupant_count: number; // 入居人数
+  vacancy: number; // 空状況
+  rent_cost: number; // 契約家賃
+  rent_target: number; // 設定家賃
+  profit: number; // 利益
+  notes: string; // 備考
+}
+
+// Fila del resumen por empresa (派遣先)
+export interface CompanyReportRow {
+  company: string; // 派遣先名
+  property_count: number; // 物件数
+  rent_cost: number; // 契約家賃 total
+  rent_target: number; // 設定家賃 total
+  profit: number; // 利益
+  payroll_deduction: number; // 支給家賃控除 (descuento nómina)
+  monthly_profit: number; // 月家賃利益
+}
+
+// Fila de descuento nómina (para contabilidad)
+export interface PayrollDeductionRow {
+  employee_id: string; // 社員No
+  company: string; // 派遣先
+  name_kana: string; // カナ
+  name: string; // 氏名
+  property_name: string; // アパート名
+  rent_deduction: number; // 家賃控除額
+  parking_deduction: number; // 駐車場控除額
+  total_deduction: number; // 控除合計
+}
+
+// Snapshot de cierre mensual
+export interface MonthlySnapshot {
+  id: string;
+  cycle_month: string; // "2026-02" formato
+  cycle_start: string;
+  cycle_end: string;
+  closed_at: string; // Timestamp del cierre
+  total_properties: number;
+  total_tenants: number;
+  total_collected: number;
+  total_cost: number;
+  total_target: number;
+  profit: number;
+  occupancy_rate: number;
+  company_summary: CompanyReportRow[];
+  property_detail: PropertyReportRow[];
+  payroll_detail: PayrollDeductionRow[];
+}
+
+// Almacenamiento de histórico de reportes
+export interface ReportHistory {
+  snapshots: MonthlySnapshot[];
+  version: string;
+}
+
 // ============ HISTORIAL (Future) ============
 export interface AuditLog {
   id: string;
