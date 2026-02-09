@@ -15,6 +15,7 @@ import type { Property, Tenant, Employee, AppDatabase, AlertItem } from './types
 import { validateBackup, validateProperty, validateTenant } from './utils/validators';
 import { isPropertyActive } from './utils/propertyHelpers';
 import { COMPANY_INFO } from './utils/constants';
+import * as XLSX from 'xlsx';
 
 // --- ID Generator (monotónico, sin colisiones) ---
 let _lastId = 0;
@@ -24,19 +25,7 @@ const generateId = (): number => {
   return _lastId;
 };
 
-// --- SheetJS ---
-const useLoadSheetJS = () => {
-  useEffect(() => {
-    if ((window as any).XLSX) return;
-    const script = document.createElement('script');
-    script.src = "https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js";
-    script.integrity = "sha384-OLBgp1GsljhM2TJ+sbHjaiH9txEUvgdDTAzHv2P24donTt6/529l+9Ua0vFImLlb";
-    script.crossOrigin = "anonymous";
-    script.async = true;
-    script.onerror = () => { console.error('[SheetJS] Error cargando CDN'); };
-    document.body.appendChild(script);
-  }, []);
-};
+// --- SheetJS (Already imported via package) ---
 
 // --- 日割り計算 (Pro-rata) ---
 const calculateProRata = (monthlyAmount: number, entryDate: string) => {
@@ -61,7 +50,6 @@ const EMPTY_TENANT_FORM = { employee_id: '', name: '', name_kana: '', company: '
 // ============ APP PRINCIPAL =================
 // ============================================
 export default function App() {
-  useLoadSheetJS();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
   // IndexedDB (Dexie) — reemplaza localStorage
@@ -351,19 +339,39 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const X = (window as any).XLSX;
-        if (!X) { setImportStatus({ type: 'error', msg: 'SheetJS aún no terminó de cargar. Espere e intente de nuevo.' }); return; }
-        const wb = X.read(new Uint8Array(e.target?.result as ArrayBuffer), { type: 'array' });
+        const wb = XLSX.read(new Uint8Array(e.target?.result as ArrayBuffer), { type: 'array' });
         const sn: string[] = wb.SheetNames;
-        let emp = sn.find((n: string) => n.includes('Genzai') || n.includes('Ukeoi') || n.includes('台帳'));
+        const empSheets = sn.filter((n: string) => {
+          const name = n.toLowerCase();
+          return name.includes('genzai') || name.includes('ukeoi') || name.includes('台帳') ||
+            name.includes('employee') || name.includes('staff') || name.includes('名簿') ||
+            name.includes('一覧') || name.includes('member');
+        });
         const prop = sn.find((n: string) => n.includes('会社寮情報'));
         const ten = sn.find((n: string) => n.includes('入居者一覧'));
-        if (!emp && !prop && !ten && sn.length === 1) emp = sn[0];
-        if (emp) { const d = X.utils.sheet_to_json(wb.Sheets[emp], { defval: "" }); setPreviewData(d); setDetectedType('employees'); setPreviewSummary(`社員台帳 (${emp}): ${d.length} empleados detectados.`); setImportStatus({ type: 'success', msg: 'OK' }); }
+
+        if (empSheets.length > 0) {
+          let mergedData: any[] = [];
+          empSheets.forEach(sheetName => {
+            const sheetData = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
+            mergedData = [...mergedData, ...sheetData];
+          });
+          setPreviewData(mergedData);
+          setDetectedType('employees');
+          setPreviewSummary(`社員台帳: ${mergedData.length} empleados detectados en ${empSheets.length} hojas (${empSheets.join(', ')}).`);
+          setImportStatus({ type: 'success', msg: 'OK' });
+        } else if (sn.length === 1 && !prop && !ten) {
+          // Fallback: si solo hay una hoja y no es de renta, asumimos que son empleados
+          const d = XLSX.utils.sheet_to_json(wb.Sheets[sn[0]], { defval: "" });
+          setPreviewData(d);
+          setDetectedType('employees');
+          setPreviewSummary(`社員台帳 (Hoja única: ${sn[0]}): ${d.length} empleados detectados.`);
+          setImportStatus({ type: 'success', msg: 'OK' });
+        }
         else if (prop || ten) {
           const c: any = { properties: [], tenants: [] }; let t = 'Gestión de Renta:\n';
-          if (prop) { const p = X.utils.sheet_to_json(wb.Sheets[prop], { defval: "" }); c.properties = p; t += `- ${p.length} Propiedades\n`; }
-          if (ten) { const tt = X.utils.sheet_to_json(wb.Sheets[ten], { defval: "" }); c.tenants = tt; t += `- ${tt.length} Inquilinos`; }
+          if (prop) { const p = XLSX.utils.sheet_to_json(wb.Sheets[prop], { defval: "" }); c.properties = p; t += `- ${p.length} Propiedades\n`; }
+          if (ten) { const tt = XLSX.utils.sheet_to_json(wb.Sheets[ten], { defval: "" }); c.tenants = tt; t += `- ${tt.length} Inquilinos`; }
           setPreviewData(c); setDetectedType('rent_management'); setPreviewSummary(t); setImportStatus({ type: 'success', msg: 'OK' });
         } else setImportStatus({ type: 'error', msg: 'Formato no reconocido.' });
       } catch { setImportStatus({ type: 'error', msg: 'Error de lectura.' }); }
@@ -373,7 +381,46 @@ export default function App() {
   const saveToDatabase = () => {
     const newDb: AppDatabase = JSON.parse(JSON.stringify(db)); let tab = 'dashboard';
     if (detectedType === 'employees') {
-      previewData.forEach((r: any) => { const id = r['社員No'] || r['ID']; const nm = r['氏名'] || r['Name']; if (!id || !nm) return; const emp: Employee = { id: String(id).trim(), name: String(nm).trim(), name_kana: String(r['カナ'] || ''), company: String(r['派遣先'] || ''), full_data: r }; const i = newDb.employees.findIndex(e => e.id === emp.id); if (i >= 0) newDb.employees[i] = emp; else newDb.employees.push(emp); });
+      let count = 0;
+      previewData.forEach((r: any) => {
+        const keys = Object.keys(r);
+        if (keys.length === 0) return;
+
+        // DETECCIÓN AGRESIVA - Normalizar todas las llaves a minúsculas y sin espacios
+        const findKey = (candidates: string[]) => {
+          return keys.find(k => {
+            const normalized = k.trim().toLowerCase().replace(/\s/g, '');
+            return candidates.some(c => normalized === c || normalized.includes(c));
+          });
+        };
+
+        const idKey = findKey(['社員no', '社員ｎｏ', '社員番号', '社員コード', '社員ｺｰﾄﾞ', 'id', 'no', 'no.', 'コード', 'ｺｰﾄﾞ', 'empid', 'staffid', '番号']) || keys[0];
+        const nameKey = findKey(['氏名', '名前', 'name', 'fullname', 'staffname', '氏名漢', '名称', '氏名（漢字）', '氏名(漢字)']) || (keys[1] || keys[0]);
+        const kanaKey = findKey(['カナ', 'かな', 'kana', '氏名カナ', 'ﾌﾘｶﾞﾅ', 'フリガナ', '氏名（カナ）', '氏名(kana)']);
+        // Priorizar nombres sobre códigos para 派遣先
+        const companyKey = findKey(['派遣先名', '派遣先名称', '会社名', '派遣先', 'company', 'workplace', '所属', '部署', '派遣']);
+
+        const id = r[idKey];
+        const nm = r[nameKey];
+
+        // Si falló la detección por nombre de columna, no saltar si hay datos en las columnas detectadas por posición
+        if ((id === undefined || id === null || id === '') && (nm === undefined || nm === null || nm === '')) return;
+
+        const emp: Employee = {
+          id: String(id || 'N/A').trim(),
+          name: String(nm || 'Sin Nombre').trim(),
+          name_kana: String(kanaKey ? r[kanaKey] : '').trim(),
+          company: String(companyKey ? r[companyKey] : '').trim(),
+          full_data: r
+        };
+
+        // Evitar duplicados por ID
+        const i = newDb.employees.findIndex(e => e.id === emp.id);
+        if (i >= 0) newDb.employees[i] = emp;
+        else newDb.employees.push(emp);
+        count++;
+      });
+      console.log(`[Import] Procesados ${count} empleados.`);
       tab = 'employees';
     } else if (detectedType === 'rent_management') {
       const { properties, tenants } = previewData;
