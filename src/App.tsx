@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import './App.css';
 import {
   Building, Users, LayoutDashboard, Search, Database, UploadCloud, PlusCircle, X,
   AlertCircle, Calculator, DollarSign, UserPlus, Calendar, Check,
@@ -53,7 +54,7 @@ const calculateProRata = (monthlyAmount: number, entryDate: string) => {
   return { amount, days: daysOccupied, totalDays, isProRata: true };
 };
 
-const EMPTY_PROPERTY_FORM = { id: null as number | null, name: '', room_number: '', postal_code: '', address_auto: '', address_detail: '', manager_name: '', manager_phone: '', contract_start: new Date().toISOString().split('T')[0], contract_end: '', type: '1K', capacity: 2, rent_cost: 0, rent_price_uns: 0, parking_cost: 0, kanri_hi: 0, billing_mode: 'fixed' as const };
+const EMPTY_PROPERTY_FORM = { id: null as number | null, name: '', room_number: '', postal_code: '', address_auto: '', address_detail: '', manager_name: '', manager_phone: '', contract_start: new Date().toISOString().split('T')[0], contract_end: '', type: '1K', capacity: 2, rent_cost: 0, rent_price_uns: 0, parking_cost: 0, parking_capacity: 0, kanri_hi: 0, billing_mode: 'fixed' as const };
 const EMPTY_TENANT_FORM = { employee_id: '', name: '', name_kana: '', company: '', property_id: '' as string | number, rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0] };
 
 // ============================================
@@ -95,7 +96,7 @@ export default function App() {
   const [propertyForm, setPropertyForm] = useState<any>({
     id: null, name: '', room_number: '', postal_code: '', address_auto: '', address_detail: '',
     manager_name: '', manager_phone: '', contract_start: '', contract_end: '', type: '1K',
-    capacity: 2, rent_cost: 0, rent_price_uns: 0, parking_cost: 0, kanri_hi: 0, billing_mode: 'fixed'
+    capacity: 2, rent_cost: 0, rent_price_uns: 0, parking_cost: 0, parking_capacity: 0, kanri_hi: 0, billing_mode: 'fixed'
   });
 
   // Snapshots para detectar cambios sin guardar (B13)
@@ -140,7 +141,7 @@ export default function App() {
   }, [db]);
 
   // --- BACKUP ---
-  const downloadBackup = () => { const a = document.createElement('a'); a.href = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db)); a.download = `UNS_Backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); };
+  const downloadBackup = () => { const a = document.createElement('a'); a.href = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db)); a.download = `UNS_Backup_${new Date().toISOString().slice(0, 10)}.json`; a.click(); };
   const restoreBackup = (event: React.ChangeEvent<HTMLInputElement>) => {
     const f = event.target.files?.[0]; if (!f) return;
     const r = new FileReader();
@@ -295,13 +296,15 @@ export default function App() {
     if (ts.length === 0) return dbState;
     const split = Math.floor((prop.rent_price_uns || 0) / ts.length);
     const remainder = (prop.rent_price_uns || 0) % ts.length;
-    return { ...dbState, tenants: dbState.tenants.map(t => {
-      if (t.property_id === propertyId && t.status === 'active') {
-        const idx = ts.findIndex(x => x.id === t.id);
-        return { ...t, rent_contribution: idx === 0 ? split + remainder : split };
-      }
-      return t;
-    })};
+    return {
+      ...dbState, tenants: dbState.tenants.map(t => {
+        if (t.property_id === propertyId && t.status === 'active') {
+          const idx = ts.findIndex(x => x.id === t.id);
+          return { ...t, rent_contribution: idx === 0 ? split + remainder : split };
+        }
+        return t;
+      })
+    };
   };
 
   const distributeRentEvenly = () => {
@@ -374,7 +377,7 @@ export default function App() {
       tab = 'employees';
     } else if (detectedType === 'rent_management') {
       const { properties, tenants } = previewData;
-      properties.forEach((r: any) => { const n = r['ｱﾊﾟｰﾄ'] || r['物件名']; if (!n) return; const ex = newDb.properties.find(p => p.name === n); const pid = ex ? ex.id : generateId(); const o: Property = { id: pid, name: String(n).trim(), address: String(r['住所'] || '').trim(), capacity: parseInt(r['入居人数'] || 2) || 2, rent_cost: parseInt(r['家賃'] || 0), rent_price_uns: parseInt(r['USN家賃'] || 0), parking_cost: parseInt(r['駐車場代'] || 0) }; if (ex) Object.assign(ex, o); else newDb.properties.push(o); });
+      properties.forEach((r: any) => { const n = r['ｱﾊﾟｰﾄ'] || r['物件名']; if (!n) return; const ex = newDb.properties.find(p => p.name === n); const pid = ex ? ex.id : generateId(); const o: Property = { id: pid, name: String(n).trim(), address: String(r['住所'] || '').trim(), capacity: parseInt(r['入居人数'] || 2) || 2, rent_cost: parseInt(r['家賃'] || 0), rent_price_uns: parseInt(r['USN家賃'] || 0), parking_cost: parseInt(r['駐車場代'] || 0), parking_capacity: 1 }; if (ex) Object.assign(ex, o); else newDb.properties.push(o); });
       tenants.forEach((r: any, idx: number) => { const apt = r['ｱﾊﾟｰﾄ']; const kana = r['カナ']; if (!apt || !kana) return; const pr = newDb.properties.find(p => p.name === apt); if (!pr) return; if (!newDb.tenants.find(t => t.name_kana === kana && t.property_id === pr.id)) newDb.tenants.push({ id: generateId(), employee_id: `IMP-${idx}`, name: kana, name_kana: kana, property_id: pr.id, rent_contribution: parseInt(r['家賃'] || 0), parking_fee: parseInt(r['駐車場'] || 0), entry_date: r['入居'] || new Date().toISOString().split('T')[0], status: 'active' }); });
       tab = 'properties';
     }
@@ -404,13 +407,27 @@ export default function App() {
       {/* HEADER */}
       <header className="h-20 border-b border-white/5 flex items-center justify-between px-6 md:px-10 bg-[#0d0f12]/80 backdrop-blur-md sticky top-0 z-30">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/10 p-1"><img src={COMPANY_INFO.logo_url} className="h-full object-contain" alt="Logo" onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/40x40?text=UNS"; }} /></div>
-          <div><h1 className="text-lg font-black text-white tracking-tight leading-none">{COMPANY_INFO.name_en}</h1><span className="text-[10px] text-blue-400 uppercase tracking-widest font-bold">Estate OS v7</span></div>
+          <div className="relative group">
+            <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-cyan-500 rounded-xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
+            <div className="relative w-14 h-14 bg-black/40 backdrop-blur-xl rounded-xl flex items-center justify-center border border-white/10 p-1 shadow-2xl overflow-hidden">
+              <img
+                src={COMPANY_INFO.logo_url}
+                className="w-full h-full object-contain filter drop-shadow(0 0 8px rgba(0,82,204,0.3))"
+                alt="UNS Logo"
+                onError={(e) => { e.currentTarget.src = "https://via.placeholder.com/60x60?text=UNS"; }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-tr from-white/5 to-transparent pointer-events-none"></div>
+            </div>
+          </div>
+          <div className="hidden sm:block">
+            <h1 className="text-xl font-black text-white tracking-tighter leading-none font-hud">{COMPANY_INFO.name_en}</h1>
+            <span className="text-[10px] text-blue-400 uppercase tracking-[0.3em] font-bold font-hud">Jpkken-OS Elite v7</span>
+          </div>
         </div>
         <div className="flex items-center bg-[#15171c] border border-white/10 rounded-full px-3 py-2 flex-1 mx-3 md:mx-0 md:flex-none md:w-96 focus-within:border-blue-500/50 transition-all group">
           <Search className="w-4 h-4 text-gray-500 group-focus-within:text-blue-500 transition-colors shrink-0" />
           <input type="text" placeholder="Buscar propiedades, empleados, inquilinos..." className="bg-transparent border-none outline-none text-sm text-white w-full ml-2 placeholder-gray-600" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && searchTerm) { const counts = [{ tab: 'properties', n: filteredProperties.length }, { tab: 'employees', n: filteredEmployees.length }, { tab: 'properties', n: filteredTenants.length }]; const best = counts.sort((a, b) => b.n - a.n)[0]; setActiveTab(best.n > 0 ? best.tab : 'properties'); } }} />
-          {searchTerm && <button onClick={() => setSearchTerm('')} className="text-gray-500 hover:text-white shrink-0"><X className="w-3.5 h-3.5"/></button>}
+          {searchTerm && <button onClick={() => setSearchTerm('')} className="text-gray-500 hover:text-white shrink-0"><X className="w-3.5 h-3.5" /></button>}
         </div>
         <div className="flex items-center gap-2">
           <button aria-label={`Alertas (${dashboardData.alerts.length})`} className="w-8 h-8 rounded-full bg-[#15171c] border border-white/10 flex items-center justify-center hover:bg-[#20242c] cursor-pointer transition relative"><Bell className="w-4 h-4 text-gray-400" />{dashboardData.alerts.length > 0 && <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}</button>
@@ -486,8 +503,8 @@ export default function App() {
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
               <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-[#15171c] p-2 rounded-2xl border border-white/5">
                 <div className="flex gap-1 bg-black/40 p-1 rounded-xl w-full md:w-auto">
-                  <button onClick={() => setPropertyViewMode('active')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${propertyViewMode === 'active' ? 'bg-[#20242c] text-white shadow-lg border border-white/10' : 'text-gray-500 hover:text-white'}`}><Building className="w-4 h-4"/> Activos</button>
-                  <button onClick={() => setPropertyViewMode('history')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${propertyViewMode === 'history' ? 'bg-[#20242c] text-white shadow-lg border border-white/10' : 'text-gray-500 hover:text-white'}`}><History className="w-4 h-4"/> Historial</button>
+                  <button onClick={() => setPropertyViewMode('active')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${propertyViewMode === 'active' ? 'bg-[#20242c] text-white shadow-lg border border-white/10' : 'text-gray-500 hover:text-white'}`}><Building className="w-4 h-4" /> Activos</button>
+                  <button onClick={() => setPropertyViewMode('history')} className={`flex-1 md:flex-none px-6 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${propertyViewMode === 'history' ? 'bg-[#20242c] text-white shadow-lg border border-white/10' : 'text-gray-500 hover:text-white'}`}><History className="w-4 h-4" /> Historial</button>
                 </div>
                 <div className="flex gap-2 w-full md:w-auto">
                   {uniqueCompanies.length > 0 && (
@@ -496,7 +513,7 @@ export default function App() {
                       {uniqueCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   )}
-                  <button onClick={() => { const f = { id: null, name: '', room_number: '', postal_code: '', address_auto: '', address_detail: '', manager_name: '', manager_phone: '', contract_start: new Date().toISOString().split('T')[0], contract_end: '', type: '1K', capacity: 2, rent_cost: 0, rent_price_uns: 0, parking_cost: 0, kanri_hi: 0, billing_mode: 'fixed' as const }; setPropertyForm(f); propertyFormSnapshot.current = JSON.stringify(f); setIsPropertyModalOpen(true); }} className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"><PlusCircle className="w-4 h-4"/> Nueva Propiedad</button>
+                  <button onClick={() => { const f = { id: null, name: '', room_number: '', postal_code: '', address_auto: '', address_detail: '', manager_name: '', manager_phone: '', contract_start: new Date().toISOString().split('T')[0], contract_end: '', type: '1K', capacity: 2, rent_cost: 0, rent_price_uns: 0, parking_cost: 0, parking_capacity: 0, kanri_hi: 0, billing_mode: 'fixed' as const }; setPropertyForm(f); propertyFormSnapshot.current = JSON.stringify(f); setIsPropertyModalOpen(true); }} className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"><PlusCircle className="w-4 h-4" /> Nueva Propiedad</button>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -504,6 +521,7 @@ export default function App() {
                   const ts = db.tenants.filter(t => t.property_id === p.id && t.status === 'active');
                   const totalIn = ts.reduce((s, t) => s + (t.rent_contribution || 0) + (t.parking_fee || 0), 0);
                   const vac = (p.capacity || 0) - ts.length;
+                  const parkingUsed = db.tenants.filter(t => t.property_id === p.id && t.status === 'active' && (t.parking_fee || 0) > 0).length;
                   const totalCost = (p.rent_cost || 0) + (p.kanri_hi || 0) + (p.parking_cost || 0);
                   return (
                     <GlassCard key={p.id} className="flex flex-col justify-between p-5 min-h-[320px]">
@@ -518,18 +536,30 @@ export default function App() {
                         <div className="space-y-2 mb-4 text-xs">
                           <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-gray-500">家賃 (不動産屋)</span><span className="text-white font-mono">¥{(p.rent_cost || 0).toLocaleString()}</span></div>
                           {(p.kanri_hi || 0) > 0 && <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-gray-500">管理費</span><span className="text-white font-mono">¥{(p.kanri_hi || 0).toLocaleString()}</span></div>}
-                          {(p.parking_cost || 0) > 0 && <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-gray-500">駐車場代</span><span className="text-blue-400 font-mono">¥{(p.parking_cost || 0).toLocaleString()}</span></div>}
+                          <div className="flex justify-between border-b border-white/5 pb-1">
+                            <span className="text-gray-500">Estacionamiento</span>
+                            <div className="flex items-center gap-2">
+                              {p.parking_capacity > 0 ? (
+                                <>
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-black ${parkingUsed >= p.parking_capacity ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'}`}>{parkingUsed}/{p.parking_capacity}</span>
+                                  <span className="text-blue-400 font-mono">¥{(p.parking_cost || 0).toLocaleString()}</span>
+                                </>
+                              ) : (
+                                <span className="text-gray-600 italic">No disponible</span>
+                              )}
+                            </div>
+                          </div>
                           <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-gray-500 font-bold">合計コスト</span><span className="text-red-400 font-mono font-bold">¥{totalCost.toLocaleString()}</span></div>
                           <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-gray-500">Objetivo UNS</span><span className="text-blue-500 font-mono font-bold">¥{(p.rent_price_uns || 0).toLocaleString()}</span></div>
                           <div className="flex justify-between pt-1"><span className="text-gray-400 font-bold uppercase">Recaudado</span><span className={`text-lg font-black font-mono ${totalIn >= (p.rent_price_uns || 0) ? 'text-green-400' : 'text-orange-400'}`}>¥{totalIn.toLocaleString()}</span></div>
                         </div>
-                        {ts.length > 0 && <div className="mb-3 space-y-1.5">{ts.map(t => (<div key={t.id} className="flex items-center gap-2 text-[10px] text-gray-400"><User className="w-3 h-3 text-blue-500 shrink-0"/><div className="flex flex-col min-w-0 flex-1"><span className="truncate text-gray-300">{t.name}</span>{t.company && <span className="truncate text-[9px] text-cyan-500/70">派遣先: {t.company}</span>}</div><span className="text-gray-600 font-mono shrink-0">¥{t.rent_contribution.toLocaleString()}</span></div>))}</div>}
-                        {(() => { const past = db.tenants.filter(t => t.property_id === p.id && t.status === 'inactive'); return past.length > 0 ? <div className="mb-3 flex items-center gap-1.5 text-[10px] text-orange-400/60"><History className="w-3 h-3"/><span>{past.length} inquilino{past.length > 1 ? 's' : ''} anterior{past.length > 1 ? 'es' : ''}</span></div> : null; })()}
-                        <div className="space-y-1 opacity-60 hover:opacity-100 transition-opacity mb-3"><p className="text-gray-400 text-[10px] flex gap-1 truncate items-center"><MapPin className="w-3 h-3 text-gray-600"/> {p.address}</p></div>
+                        {ts.length > 0 && <div className="mb-3 space-y-1.5">{ts.map(t => (<div key={t.id} className="flex items-center gap-2 text-[10px] text-gray-400"><User className="w-3 h-3 text-blue-500 shrink-0" /><div className="flex flex-col min-w-0 flex-1"><span className="truncate text-gray-300">{t.name}</span>{t.company && <span className="truncate text-[9px] text-cyan-500/70">派遣先: {t.company}</span>}</div><span className="text-gray-600 font-mono shrink-0">¥{t.rent_contribution.toLocaleString()}</span></div>))}</div>}
+                        {(() => { const past = db.tenants.filter(t => t.property_id === p.id && t.status === 'inactive'); return past.length > 0 ? <div className="mb-3 flex items-center gap-1.5 text-[10px] text-orange-400/60"><History className="w-3 h-3" /><span>{past.length} inquilino{past.length > 1 ? 's' : ''} anterior{past.length > 1 ? 'es' : ''}</span></div> : null; })()}
+                        <div className="space-y-1 opacity-60 hover:opacity-100 transition-opacity mb-3"><p className="text-gray-400 text-[10px] flex gap-1 truncate items-center"><MapPin className="w-3 h-3 text-gray-600" /> {p.address}</p></div>
                       </div>
                       <div className="flex gap-2 mt-auto">
-                        <button onClick={() => { const f = { ...p, kanri_hi: p.kanri_hi || 0, billing_mode: p.billing_mode || 'fixed' }; setPropertyForm(f); propertyFormSnapshot.current = JSON.stringify(f); setIsPropertyModalOpen(true); }} className="bg-black/40 hover:bg-black/60 text-gray-300 p-2.5 rounded-lg border border-white/10 transition"><Edit2 className="w-4 h-4"/></button>
-                        <button onClick={() => handleDeleteProperty(p.id)} className="bg-black/40 hover:bg-red-900/40 text-gray-500 hover:text-red-400 p-2.5 rounded-lg border border-white/10 hover:border-red-500/30 transition" title="Eliminar propiedad"><Trash2 className="w-4 h-4"/></button>
+                        <button onClick={() => { const f = { ...p, kanri_hi: p.kanri_hi || 0, billing_mode: p.billing_mode || 'fixed', parking_capacity: p.parking_capacity || 0 }; setPropertyForm(f); propertyFormSnapshot.current = JSON.stringify(f); setIsPropertyModalOpen(true); }} className="bg-black/40 hover:bg-black/60 text-gray-300 p-2.5 rounded-lg border border-white/10 transition"><Edit2 className="w-4 h-4" /></button>
+                        <button onClick={() => handleDeleteProperty(p.id)} className="bg-black/40 hover:bg-red-900/40 text-gray-500 hover:text-red-400 p-2.5 rounded-lg border border-white/10 hover:border-red-500/30 transition" title="Eliminar propiedad"><Trash2 className="w-4 h-4" /></button>
                         {propertyViewMode === 'active' && <button onClick={() => openRentManager(p)} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase tracking-wider py-2.5 rounded-lg shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 transition"><DollarSign className="w-4 h-4" /> Gestión</button>}
                       </div>
                     </GlassCard>
@@ -551,21 +581,21 @@ export default function App() {
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
               <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                 <div><h2 className="text-3xl font-black text-white">社員台帳</h2><p className="text-gray-500 text-sm">Base de datos de empleados — {db.employees.length} registros</p></div>
-                <button onClick={() => setActiveTab('import')} className="bg-green-600 hover:bg-green-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-green-500/20"><UploadCloud className="w-4 h-4"/> Importar 社員台帳</button>
+                <button onClick={() => setActiveTab('import')} className="bg-green-600 hover:bg-green-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-green-500/20"><UploadCloud className="w-4 h-4" /> Importar 社員台帳</button>
               </div>
               {db.employees.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <div className="bg-gray-900 p-6 rounded-full mb-6 border border-gray-800"><Table2 className="w-12 h-12 text-gray-600" /></div>
                   <h3 className="text-2xl font-bold text-white mb-2">Sin empleados</h3>
                   <p className="text-gray-500 max-w-md mb-6">Importa tu archivo Excel de 社員台帳 para cargar todos los empleados.</p>
-                  <button onClick={() => setActiveTab('import')} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2"><UploadCloud className="w-5 h-5"/> Ir a Importar</button>
+                  <button onClick={() => setActiveTab('import')} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2"><UploadCloud className="w-5 h-5" /> Ir a Importar</button>
                 </div>
               ) : (
                 <>
                   <div className="flex items-center bg-[#15171c] border border-white/10 rounded-xl px-4 py-3 focus-within:border-blue-500/50 transition-all">
                     <Search className="w-4 h-4 text-gray-500" />
                     <input type="text" placeholder="Buscar por ID, nombre, カナ, empresa..." className="bg-transparent border-none outline-none text-sm text-white w-full ml-3 placeholder-gray-600" value={empSearch} onChange={e => { setEmpSearch(e.target.value); setEmpPage(1); }} />
-                    {empSearch && <button onClick={() => setEmpSearch('')} className="text-gray-500 hover:text-white"><X className="w-4 h-4"/></button>}
+                    {empSearch && <button onClick={() => setEmpSearch('')} className="text-gray-500 hover:text-white"><X className="w-4 h-4" /></button>}
                   </div>
                   <GlassCard hoverEffect={false} className="overflow-hidden">
                     <div className="overflow-x-auto">
@@ -588,11 +618,11 @@ export default function App() {
                                 <td className="p-4 text-white font-medium">{emp.name}</td>
                                 <td className="p-4 text-gray-400 hidden md:table-cell">{emp.name_kana}</td>
                                 <td className="p-4 text-gray-400 hidden md:table-cell">{emp.company}</td>
-                                <td className="p-4">{isAssigned ? <span className="text-[10px] bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-1 rounded font-bold flex items-center gap-1 w-fit"><Building className="w-3 h-3"/>{assignedProp?.name}</span> : <span className="text-[10px] text-gray-500">Disponible</span>}</td>
+                                <td className="p-4">{isAssigned ? <span className="text-[10px] bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-1 rounded font-bold flex items-center gap-1 w-fit"><Building className="w-3 h-3" />{assignedProp?.name}</span> : <span className="text-[10px] text-gray-500">Disponible</span>}</td>
                                 <td className="p-4 text-right">
                                   <div className="flex items-center justify-end gap-1">
-                                    <button onClick={() => { const e = { ...emp }; setEditingEmployee(e); employeeSnapshot.current = JSON.stringify(e); }} className="text-gray-600 hover:text-blue-400 p-1.5 rounded transition" title="Editar"><Edit2 className="w-3.5 h-3.5"/></button>
-                                    <button onClick={() => handleDeleteEmployee(emp.id)} className="text-gray-600 hover:text-red-400 p-1.5 rounded transition" title="Eliminar"><Trash2 className="w-3.5 h-3.5"/></button>
+                                    <button onClick={() => { const e = { ...emp }; setEditingEmployee(e); employeeSnapshot.current = JSON.stringify(e); }} className="text-gray-600 hover:text-blue-400 p-1.5 rounded transition" title="Editar"><Edit2 className="w-3.5 h-3.5" /></button>
+                                    <button onClick={() => handleDeleteEmployee(emp.id)} className="text-gray-600 hover:text-red-400 p-1.5 rounded transition" title="Eliminar"><Trash2 className="w-3.5 h-3.5" /></button>
                                   </div>
                                 </td>
                               </tr>
@@ -658,18 +688,18 @@ export default function App() {
 
               {/* BILLING MODE */}
               <div className="bg-gray-800/30 p-4 rounded-xl border border-white/5">
-                <div className="text-[10px] text-gray-500 uppercase font-bold mb-3 flex items-center gap-2"><Percent className="w-3 h-3"/> Modo de Cobro</div>
+                <div className="text-[10px] text-gray-500 uppercase font-bold mb-3 flex items-center gap-2"><Percent className="w-3 h-3" /> Modo de Cobro</div>
                 <div className="flex gap-2">
-                  <button onClick={() => { setDb(prev => ({ ...prev, properties: prev.properties.map(p => p.id === prop.id ? { ...p, billing_mode: 'split' as const } : p) })); setSelectedPropertyForRent({ ...prop, billing_mode: 'split' }); }} className={`flex-1 p-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 border transition-all ${mode === 'split' ? 'bg-purple-500/20 border-purple-500 text-purple-400' : 'bg-gray-900 border-gray-700 text-gray-500 hover:text-white'}`}><Calculator className="w-4 h-4"/> 均等割り (Dividir)</button>
-                  <button onClick={() => { setDb(prev => ({ ...prev, properties: prev.properties.map(p => p.id === prop.id ? { ...p, billing_mode: 'fixed' as const } : p) })); setSelectedPropertyForRent({ ...prop, billing_mode: 'fixed' }); }} className={`flex-1 p-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 border transition-all ${mode === 'fixed' ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400' : 'bg-gray-900 border-gray-700 text-gray-500 hover:text-white'}`}><Edit2 className="w-4 h-4"/> 個別設定 (Individual)</button>
+                  <button onClick={() => { setDb(prev => ({ ...prev, properties: prev.properties.map(p => p.id === prop.id ? { ...p, billing_mode: 'split' as const } : p) })); setSelectedPropertyForRent({ ...prop, billing_mode: 'split' }); }} className={`flex-1 p-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 border transition-all ${mode === 'split' ? 'bg-purple-500/20 border-purple-500 text-purple-400' : 'bg-gray-900 border-gray-700 text-gray-500 hover:text-white'}`}><Calculator className="w-4 h-4" /> 均等割り (Dividir)</button>
+                  <button onClick={() => { setDb(prev => ({ ...prev, properties: prev.properties.map(p => p.id === prop.id ? { ...p, billing_mode: 'fixed' as const } : p) })); setSelectedPropertyForRent({ ...prop, billing_mode: 'fixed' }); }} className={`flex-1 p-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 border transition-all ${mode === 'fixed' ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400' : 'bg-gray-900 border-gray-700 text-gray-500 hover:text-white'}`}><Edit2 className="w-4 h-4" /> 個別設定 (Individual)</button>
                 </div>
                 {mode === 'split' && tenants.length > 0 && <p className="text-xs text-purple-300 mt-2 text-center">¥{(prop.rent_price_uns || 0).toLocaleString()} ÷ {tenants.length} personas = <span className="font-bold">¥{Math.floor((prop.rent_price_uns || 0) / tenants.length).toLocaleString()}</span>/persona</p>}
               </div>
 
               {/* ACTIONS */}
               <div className="flex gap-3">
-                {mode === 'split' && <button onClick={distributeRentEvenly} className="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20 transition"><Calculator className="w-4 h-4"/> Aplicar División</button>}
-                <button onClick={() => { const f = { employee_id: '', name: '', name_kana: '', company: '', property_id: prop.id, rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0] }; setTenantForm(f); tenantFormSnapshot.current = JSON.stringify(f); setIsAddTenantModalOpen(true); }} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition"><UserPlus className="w-4 h-4"/> Registrar Inquilino</button>
+                {mode === 'split' && <button onClick={distributeRentEvenly} className="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20 transition"><Calculator className="w-4 h-4" /> Aplicar División</button>}
+                <button onClick={() => { const f = { employee_id: '', name: '', name_kana: '', company: '', property_id: prop.id, rent_contribution: 0, parking_fee: 0, entry_date: new Date().toISOString().split('T')[0] }; setTenantForm(f); tenantFormSnapshot.current = JSON.stringify(f); setIsAddTenantModalOpen(true); }} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition"><UserPlus className="w-4 h-4" /> Registrar Inquilino</button>
               </div>
 
               {/* TENANT TABLE - ACTIVE */}
@@ -690,14 +720,14 @@ export default function App() {
                           <div className="text-white text-sm font-bold truncate">{t.name}</div>
                           <div className="text-[10px] text-gray-500 font-mono">{t.employee_id}</div>
                           {t.company && <div className="text-[9px] text-cyan-400/70 truncate">派遣先: {t.company}</div>}
-                          {t.rent_contribution === 0 && <div className="text-[9px] text-red-400 font-bold mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> SIN PRECIO</div>}
+                          {t.rent_contribution === 0 && <div className="text-[9px] text-red-400 font-bold mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> SIN PRECIO</div>}
                         </div>
                         <div className="col-span-2 text-center"><div className="text-[10px] text-gray-400 font-mono">{t.entry_date || '—'}</div></div>
                         <div className="col-span-2"><input type="number" className="w-full bg-gray-900 text-white font-mono text-sm p-2 rounded-lg text-right border border-gray-700 focus:border-blue-500 outline-none transition" value={t.rent_contribution} onChange={(e) => handleUpdateRentDetails(t.id, 'rent_contribution', e.target.value)} /></div>
                         <div className="col-span-2 text-center">{pr.isProRata ? <div><div className="text-yellow-400 font-mono text-xs font-bold">¥{pr.amount.toLocaleString()}</div><div className="text-[9px] text-gray-500">{pr.days}/{pr.totalDays}日</div></div> : <span className="text-[10px] text-gray-600">全月</span>}</div>
                         <div className="col-span-2 flex items-center gap-1">
                           <input type="number" className="w-full bg-gray-900 text-blue-400 font-mono text-sm p-2 rounded-lg text-right border border-blue-900/30 focus:border-blue-500 outline-none transition" value={t.parking_fee} onChange={(e) => handleUpdateRentDetails(t.id, 'parking_fee', e.target.value)} />
-                          <button onClick={() => removeTenant(t.id)} className="text-gray-600 hover:text-red-400 transition p-1 shrink-0" title="Dar de baja"><LogOut className="w-3.5 h-3.5"/></button>
+                          <button onClick={() => removeTenant(t.id)} className="text-gray-600 hover:text-red-400 transition p-1 shrink-0" title="Dar de baja"><LogOut className="w-3.5 h-3.5" /></button>
                         </div>
                       </div>
                     );
@@ -743,7 +773,7 @@ export default function App() {
                             <div className="text-[10px] text-red-400 font-mono font-bold">¥{(t.cleaning_fee || 0).toLocaleString()}</div>
                           </div>
                           <div className="col-span-1 text-right">
-                            <button onClick={() => reactivateTenant(t.id)} className="text-gray-600 hover:text-green-400 transition p-1" title="Reactivar inquilino"><UserPlus className="w-3.5 h-3.5"/></button>
+                            <button onClick={() => reactivateTenant(t.id)} className="text-gray-600 hover:text-green-400 transition p-1" title="Reactivar inquilino"><UserPlus className="w-3.5 h-3.5" /></button>
                           </div>
                         </div>
                       ))}
@@ -757,7 +787,7 @@ export default function App() {
       </Modal>
 
       {/* ====== MODAL: PROPERTY FORM ====== */}
-      <Modal isOpen={isPropertyModalOpen} onClose={() => { if (!confirmDiscardChanges(JSON.stringify(propertyForm), propertyFormSnapshot.current)) return; setPropertyForm({...EMPTY_PROPERTY_FORM}); setIsPropertyModalOpen(false); }} title={propertyForm.id ? "Editar Propiedad" : "Nueva Propiedad"}>
+      <Modal isOpen={isPropertyModalOpen} onClose={() => { if (!confirmDiscardChanges(JSON.stringify(propertyForm), propertyFormSnapshot.current)) return; setPropertyForm({ ...EMPTY_PROPERTY_FORM }); setIsPropertyModalOpen(false); }} title={propertyForm.id ? "Editar Propiedad" : "Nueva Propiedad"}>
         <form onSubmit={handleSaveProperty} className="space-y-6">
           <div className="grid grid-cols-2 gap-5">
             <div><label className="text-xs text-gray-400 font-bold block mb-1.5 ml-1">Nombre Edificio</label><input className="w-full bg-black/50 border border-gray-700 p-3 rounded-xl text-white focus:border-blue-500 outline-none transition" value={propertyForm.name} onChange={e => setPropertyForm({ ...propertyForm, name: e.target.value })} placeholder="Ej: Legend K" required /></div>
@@ -780,10 +810,11 @@ export default function App() {
             {/* COSTS */}
             <div className="col-span-2 bg-gray-800/30 p-5 rounded-2xl border border-white/5">
               <h4 className="text-green-400 text-xs font-bold mb-4 uppercase flex items-center gap-2"><DollarSign className="w-3 h-3" /> Estructura de Costos (不動産屋に払う)</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div><label className="text-[10px] text-gray-500 block mb-1">家賃 (Renta)</label><input type="number" min="0" step="1000" className="w-full bg-black border border-gray-700 p-2.5 rounded-lg text-white font-mono focus:border-green-500 outline-none" value={propertyForm.rent_cost} onChange={e => setPropertyForm({ ...propertyForm, rent_cost: Number(e.target.value) || 0 })} /></div>
                 <div><label className="text-[10px] text-gray-500 block mb-1">管理費</label><input type="number" min="0" step="500" className="w-full bg-black border border-gray-700 p-2.5 rounded-lg text-white font-mono focus:border-green-500 outline-none" value={propertyForm.kanri_hi} onChange={e => setPropertyForm({ ...propertyForm, kanri_hi: Number(e.target.value) || 0 })} /></div>
-                <div><label className="text-[10px] text-blue-400 block mb-1">駐車場代</label><input type="number" min="0" step="500" className="w-full bg-black border border-blue-900/30 p-2.5 rounded-lg text-blue-200 font-mono focus:border-blue-500 outline-none" value={propertyForm.parking_cost} onChange={e => setPropertyForm({ ...propertyForm, parking_cost: Number(e.target.value) || 0 })} /></div>
+                <div><label className="text-[10px] text-blue-400 block mb-1">Parking (Total ¥)</label><input type="number" min="0" step="500" className="w-full bg-black border border-blue-900/30 p-2.5 rounded-lg text-blue-200 font-mono focus:border-blue-500 outline-none" value={propertyForm.parking_cost} onChange={e => setPropertyForm({ ...propertyForm, parking_cost: Number(e.target.value) || 0 })} /></div>
+                <div><label className="text-[10px] text-blue-400 block mb-1">Cant. Parking</label><input type="number" min="0" className="w-full bg-black border border-blue-900/30 p-2.5 rounded-lg text-blue-200 font-mono focus:border-blue-500 outline-none" value={propertyForm.parking_capacity} onChange={e => setPropertyForm({ ...propertyForm, parking_capacity: Number(e.target.value) || 0 })} /></div>
                 <div><label className="text-[10px] text-yellow-500 block mb-1 font-bold">Precio UNS</label><input type="number" min="0" step="1000" className="w-full bg-black border border-yellow-900/30 p-2.5 rounded-lg text-yellow-400 font-mono font-bold focus:border-yellow-500 outline-none" value={propertyForm.rent_price_uns} onChange={e => setPropertyForm({ ...propertyForm, rent_price_uns: Number(e.target.value) || 0 })} /></div>
               </div>
             </div>
@@ -807,14 +838,14 @@ export default function App() {
             <div><label className="text-xs text-gray-400 block mb-1">Fin Contrato</label><input type="date" className="w-full bg-black/50 border border-gray-700 p-2.5 rounded-lg text-white" value={propertyForm.contract_end} onChange={e => setPropertyForm({ ...propertyForm, contract_end: e.target.value })} /></div>
           </div>
           <div className="flex gap-4 pt-4">
-            <button type="button" onClick={() => { if (!confirmDiscardChanges(JSON.stringify(propertyForm), propertyFormSnapshot.current)) return; setPropertyForm({...EMPTY_PROPERTY_FORM}); setIsPropertyModalOpen(false); }} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-4 rounded-xl hover:bg-white/5 transition">Cancelar</button>
+            <button type="button" onClick={() => { if (!confirmDiscardChanges(JSON.stringify(propertyForm), propertyFormSnapshot.current)) return; setPropertyForm({ ...EMPTY_PROPERTY_FORM }); setIsPropertyModalOpen(false); }} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-4 rounded-xl hover:bg-white/5 transition">Cancelar</button>
             <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-500/20 transition hover:-translate-y-1">Guardar</button>
           </div>
         </form>
       </Modal>
 
       {/* ====== MODAL: ADD TENANT ====== */}
-      <Modal isOpen={isAddTenantModalOpen} onClose={() => { if (!confirmDiscardChanges(JSON.stringify(tenantForm), tenantFormSnapshot.current)) return; setTenantForm({...EMPTY_TENANT_FORM}); setIsIdFound(false); setIsAddTenantModalOpen(false); }} title="Registrar Inquilino">
+      <Modal isOpen={isAddTenantModalOpen} onClose={() => { if (!confirmDiscardChanges(JSON.stringify(tenantForm), tenantFormSnapshot.current)) return; setTenantForm({ ...EMPTY_TENANT_FORM }); setIsIdFound(false); setIsAddTenantModalOpen(false); }} title="Registrar Inquilino">
         <form onSubmit={handleAddTenant} className="space-y-6">
           <div className="bg-gray-800/50 p-6 rounded-2xl border border-white/5">
             <label className="text-xs text-blue-500 font-bold block mb-2 uppercase tracking-wide">Paso 1: 社員No (ID Empleado)</label>
@@ -861,7 +892,7 @@ export default function App() {
           </div>
 
           <div className="flex gap-4 pt-2">
-            <button type="button" onClick={() => { if (!confirmDiscardChanges(JSON.stringify(tenantForm), tenantFormSnapshot.current)) return; setTenantForm({...EMPTY_TENANT_FORM}); setIsIdFound(false); setIsAddTenantModalOpen(false); }} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-4 rounded-xl hover:bg-white/5 transition">Cancelar</button>
+            <button type="button" onClick={() => { if (!confirmDiscardChanges(JSON.stringify(tenantForm), tenantFormSnapshot.current)) return; setTenantForm({ ...EMPTY_TENANT_FORM }); setIsIdFound(false); setIsAddTenantModalOpen(false); }} className="flex-1 bg-transparent border border-gray-600 text-gray-300 font-bold py-4 rounded-xl hover:bg-white/5 transition">Cancelar</button>
             <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg hover:shadow-blue-500/20 transition hover:-translate-y-1">Confirmar</button>
           </div>
         </form>

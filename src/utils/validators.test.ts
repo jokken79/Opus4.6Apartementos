@@ -10,6 +10,7 @@ describe('validateProperty', () => {
     rent_cost: 80000,
     rent_price_uns: 95000,
     parking_cost: 5000,
+    parking_capacity: 1,
   };
 
   it('returns success for valid property data', () => {

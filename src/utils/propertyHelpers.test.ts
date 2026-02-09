@@ -10,6 +10,7 @@ const makeProperty = (overrides: Partial<Property> = {}): Property => ({
   rent_cost: 50000,
   rent_price_uns: 60000,
   parking_cost: 0,
+  parking_capacity: 0,
   ...overrides,
 });
 

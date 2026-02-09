@@ -19,6 +19,7 @@ export interface Property {
   rent_cost: number; // Costo real (a propietario)
   rent_price_uns: number; // Precio objetivo UNS
   parking_cost: number;
+  parking_capacity: number; // Cantidad total de puestos
   kanri_hi?: number; // 管理費
 
   // Cobro

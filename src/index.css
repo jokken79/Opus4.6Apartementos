@@ -1,1 +1,106 @@
-/* Estilos globales consolidados en App.css — este archivo se mantiene vacío para evitar duplicados */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --uns-blue: #0052CC;
+  --uns-blue-glow: rgba(0, 82, 204, 0.4);
+  --uns-red: #DC143C;
+  --uns-dark-bg: #090b0f;
+  --uns-card-bg: rgba(22, 26, 34, 0.7);
+  --uns-glass-border: rgba(255, 255, 255, 0.08);
+  --uns-glass-highlight: rgba(255, 255, 255, 0.12);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--uns-dark-bg);
+  color: #e2e8f0;
+  overflow-x: hidden;
+}
+
+.font-hud {
+  font-family: 'Rajdhani', sans-serif;
+}
+
+.modal-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.modal-scroll-area::-webkit-scrollbar {
+  width: 4px;
+}
+
+.glass-cockpit {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 100%), var(--uns-card-bg);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--uns-glass-border);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  position: relative;
+  overflow: hidden;
+}
+
+.neon-glow-blue {
+  box-shadow: 0 0 15px var(--uns-blue-glow);
+}
+
+.text-glow-blue {
+  text-shadow: 0 0 8px var(--uns-blue-glow);
+}
+
+.hud-panel {
+  border-left: 3px solid var(--uns-blue);
+  background: linear-gradient(90deg, rgba(0, 82, 204, 0.1) 0%, transparent 100%);
+}
+
+@keyframes scanline {
+  0% {
+    transform: translateY(-100%);
+  }
+
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+.scanline::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(to bottom, transparent, rgba(0, 82, 204, 0.05), transparent);
+  animation: scanline 8s linear infinite;
+  pointer-events: none;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--uns-dark-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2d3748;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--uns-blue);
+}

@@ -20,6 +20,7 @@ export const PropertySchema = z.object({
   rent_cost: z.number().nonnegative('Costo no puede ser negativo'),
   rent_price_uns: z.number().nonnegative('Precio UNS no puede ser negativo'),
   parking_cost: z.number().nonnegative('Costo parking no puede ser negativo'),
+  parking_capacity: z.number().int().nonnegative('Capacidad de parking no puede ser negativa').default(0),
   kanri_hi: z.number().nonnegative('管理費 no puede ser negativo').optional(),
   billing_mode: (z.enum as any)(['split', 'fixed']).optional(),
   manager_name: z.string().optional(),

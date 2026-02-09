@@ -17,5 +17,5 @@ export const COMPANY_INFO = {
     { name: "登録支援機関", number: "21登-006367" },
     { name: "古物商許可証", number: "愛知県公安委員会 第541032001..." }
   ],
-  logo_url: "https://uns-kikaku.com/wp-content/uploads/2024/02/rogo-300x123.png"
+  logo_url: "/uns-logo.png"
 };
